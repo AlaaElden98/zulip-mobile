@@ -29,6 +29,17 @@ const styles = createStyleSheet({
     flex: 1,
     margin: 8,
   },
+  deactivateText: {
+    color: '#e5898e',
+  },
+  deactivateButton: {
+    flex: 1,
+    margin: 8,
+    borderColor: '#eabab7',
+  },
+  switchText: {
+    fontSize: 15,
+  },
 });
 
 function SetStatusButton(props: {||}) {
@@ -50,6 +61,7 @@ function SwitchAccountButton(props: {||}) {
       style={styles.button}
       secondary
       text="Switch account"
+      textStyle={styles.switchText}
       onPress={() => {
         NavigationService.dispatch(navigateToAccountPicker());
       }}
@@ -90,6 +102,37 @@ function LogoutButton(props: {||}) {
     />
   );
 }
+function DeactivateAccountButton(props: {||}) {
+  const _ = useContext(TranslationContext);
+  return (
+    <ZulipButton
+      style={styles.deactivateButton}
+      secondary
+      text="Deactivate"
+      textStyle={styles.deactivateText}
+      onPress={() => {
+        Alert.alert(
+          _('Deactivate your account?'),
+          _(
+            'By deactivating your account, you will be logged out immediately.\n\nNote that any bots that you maintain will be disabled.',
+          ),
+          [
+            { text: _('Cancel'), style: 'cancel' },
+            {
+              text: _('Deactivate'),
+              style: 'destructive',
+              onPress: () => {
+                // eslint-disable-next-line no-console
+                console.log('Deactivate!!');
+              },
+            },
+          ],
+          { cancelable: true },
+        );
+      }}
+    />
+  );
+}
 
 type Props = $ReadOnly<{|
   navigation: MainTabsNavigationProp<'profile'>,
@@ -115,6 +158,7 @@ export default function ProfileScreen(props: Props) {
       <View style={styles.buttonRow}>
         <SwitchAccountButton />
         <LogoutButton />
+        <DeactivateAccountButton />
       </View>
     </ScrollView>
   );
