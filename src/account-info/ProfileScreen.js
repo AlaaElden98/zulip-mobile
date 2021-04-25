@@ -14,6 +14,7 @@ import {
   tryStopNotifications,
   navigateToAccountPicker,
   navigateToUserStatus,
+  deactivateUser,
 } from '../actions';
 import AccountDetails from './AccountDetails';
 import AwayStatusSwitch from './AwayStatusSwitch';
@@ -104,6 +105,7 @@ function LogoutButton(props: {||}) {
 }
 function DeactivateAccountButton(props: {||}) {
   const _ = useContext(TranslationContext);
+  const dispatch = useDispatch();
   return (
     <ZulipButton
       style={styles.deactivateButton}
@@ -122,8 +124,7 @@ function DeactivateAccountButton(props: {||}) {
               text: _('Deactivate'),
               style: 'destructive',
               onPress: () => {
-                // eslint-disable-next-line no-console
-                console.log('Deactivate!!');
+                dispatch(deactivateUser());
               },
             },
           ],
