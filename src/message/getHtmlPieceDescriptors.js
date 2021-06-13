@@ -34,15 +34,8 @@ export default (
       });
     }
 
-    // TODO(#3764): Use sender_id, not sender_email.  Needs making
-    //   Outbox#sender_id required; which needs a migration to drop Outbox
-    //   values that lack it; which is fine once the release that adds it
-    //   has been out for a few weeks.
     const shouldGroupWithPrev =
-      !diffRecipient
-      && !diffDays
-      && !!prevMessage
-      && prevMessage.sender_email === message.sender_email;
+      !diffRecipient && !diffDays && !!prevMessage && prevMessage.sender_id === message.sender_id;
 
     sections[sections.length - 1].data.push({
       key: message.id,

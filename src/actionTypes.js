@@ -55,6 +55,7 @@ import {
   EVENT_SUBMESSAGE,
   EVENT_SUBSCRIPTION,
   EVENT,
+  DISMISS_SERVER_COMPAT_NOTICE,
 } from './actionConstants';
 
 import type {
@@ -63,6 +64,7 @@ import type {
   PresenceEvent,
   StreamEvent,
   SubmessageEvent,
+  RestartEvent,
 } from './api/eventTypes';
 
 import type {
@@ -108,7 +110,7 @@ import type { ZulipVersion } from './utils/zulipVersion';
  */
 type RehydrateAction = {|
   type: typeof REHYDRATE,
-  payload: GlobalState | { accounts: null } | {||} | void,
+  payload: $ReadOnly<$ObjMap<$Rest<GlobalState, { ... }>, <V>(V) => V | null>> | void,
   error: mixed,
 |};
 
@@ -130,6 +132,10 @@ type DebugFlagToggleAction = {|
   type: typeof DEBUG_FLAG_TOGGLE,
   key: string,
   value: boolean,
+|};
+
+type DismissServerCompatNoticeAction = {|
+  type: typeof DISMISS_SERVER_COMPAT_NOTICE,
 |};
 
 type AccountSwitchAction = {|
@@ -300,7 +306,7 @@ type EventSubscriptionPeerRemoveAction = {|
 
 type GenericEventAction = {|
   type: typeof EVENT,
-  event: StreamEvent,
+  event: StreamEvent | RestartEvent,
 |};
 
 type EventNewMessageAction = {|
@@ -610,6 +616,7 @@ type SessionAction =
   | AppOrientationAction
   | GotPushTokenAction
   | DebugFlagToggleAction
+  | DismissServerCompatNoticeAction
   | ToggleOutboxSendingAction;
 
 /** Covers all actions we ever `dispatch`. */

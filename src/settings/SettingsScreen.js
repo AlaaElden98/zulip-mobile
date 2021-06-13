@@ -6,7 +6,7 @@ import { ScrollView } from 'react-native';
 import type { RouteProp } from '../react-navigation';
 import type { MainTabsNavigationProp } from '../main/MainTabsScreen';
 import * as NavigationService from '../nav/NavigationService';
-import type { Dispatch } from '../types';
+import type { Dispatch, BrowserPreference } from '../types';
 import { createStyleSheet } from '../styles';
 import { connect } from '../react-redux';
 import { getSettings } from '../selectors';
@@ -14,7 +14,6 @@ import { OptionButton, OptionRow } from '../common';
 import {
   IconDiagnostics,
   IconNotifications,
-  IconNight,
   IconLanguage,
   IconMoreHorizontal,
 } from '../common/Icons';
@@ -25,6 +24,7 @@ import {
   navigateToDiagnostics,
   navigateToLegal,
 } from '../actions';
+import { shouldUseInAppBrowser } from '../utils/openLink';
 
 const styles = createStyleSheet({
   optionWrapper: {
@@ -37,6 +37,7 @@ type Props = $ReadOnly<{|
   route: RouteProp<'settings', void>,
 
   theme: string,
+  browser: BrowserPreference,
   dispatch: Dispatch,
 |}>;
 
@@ -47,15 +48,21 @@ class SettingsScreen extends PureComponent<Props> {
   };
 
   render() {
-    const { theme } = this.props;
+    const { dispatch, theme, browser } = this.props;
 
     return (
       <ScrollView style={styles.optionWrapper}>
         <OptionRow
-          Icon={IconNight}
           label="Night mode"
           value={theme === 'night'}
           onValueChange={this.handleThemeChange}
+        />
+        <OptionRow
+          label="Open links with in-app browser"
+          value={shouldUseInAppBrowser(browser)}
+          onValueChange={value => {
+            dispatch(settingsChange({ browser: value ? 'embedded' : 'external' }));
+          }}
         />
         <OptionButton
           Icon={IconNotifications}
@@ -92,4 +99,5 @@ class SettingsScreen extends PureComponent<Props> {
 
 export default connect(state => ({
   theme: getSettings(state).theme,
+  browser: getSettings(state).browser,
 }))(SettingsScreen);

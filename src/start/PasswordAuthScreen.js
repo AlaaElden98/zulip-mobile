@@ -16,13 +16,18 @@ import {
   WebLink,
   ZulipButton,
   ViewPlaceholder,
+  RawLabel,
 } from '../common';
 import { isValidEmailFormat } from '../utils/misc';
 import { loginSuccess } from '../actions';
 
 const styles = createStyleSheet({
   linksTouchable: {
+    marginTop: 10,
     alignItems: 'flex-end',
+  },
+  forgotPasswordText: {
+    textAlign: 'right',
   },
 });
 
@@ -128,7 +133,9 @@ class PasswordAuthScreen extends PureComponent<Props, State> {
         />
         <ErrorMsg error={error} />
         <View style={styles.linksTouchable}>
-          <WebLink label="Forgot password?" url={new URL('/accounts/password/reset/', realm)} />
+          <RawLabel style={styles.forgotPasswordText}>
+            <WebLink label="Forgot password?" url={new URL('/accounts/password/reset/', realm)} />
+          </RawLabel>
         </View>
       </Screen>
     );

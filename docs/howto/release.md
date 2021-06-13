@@ -80,7 +80,7 @@ simple terminology for the process we follow with both.
     our translation contributors.  See
     [howto/translations.md](translations.md) for background.
 
-* Check that tests pass: `tools/test --full`.
+* Check that tests pass: `tools/test --all`.
 
 * Run `tools/bump-version` to update the version number in the
   Android and iOS build metadata.
@@ -541,6 +541,11 @@ each release manager's machine; (b) Sentry should only be enabled in
 builds explicitly meant for publication, and not in other builds a
 release manager happens to make, including builds in release mode.)
 
+
+### Set up Transifex.
+
+Install Transifex's CLI client, `tx`, using our instructions at
+[howto/translations.md](translations.md#setup).
 
 ### Prepare Android
 

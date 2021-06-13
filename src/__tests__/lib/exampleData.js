@@ -17,8 +17,14 @@ import type {
   UserId,
 } from '../../api/modelTypes';
 import { makeUserId } from '../../api/idTypes';
-import type { Action, GlobalState, MessagesState, RealmState } from '../../reduxTypes';
-import type { Auth, Account, Outbox } from '../../types';
+import type {
+  Action,
+  GlobalState,
+  CaughtUpState,
+  MessagesState,
+  RealmState,
+} from '../../reduxTypes';
+import type { Auth, Account, OutboxBase, StreamOutbox } from '../../types';
 import { UploadedAvatarURL } from '../../utils/avatar';
 import { ZulipVersion } from '../../utils/zulipVersion';
 import {
@@ -323,6 +329,11 @@ const randMessageId: () => number = makeUniqueRandInt('message ID', 10000000);
  * A PM, by default a 1:1 from eg.otherUser to eg.selfUser.
  *
  * Beware! These values may not be representative.
+ *
+ * NB that the resulting value has no `flags` property.  This matches what
+ * we expect in `state.messages`, but not some other contexts; see comment
+ * on the `flags` property of `Message`.  For use in an `EVENT_NEW_MESSAGE`
+ * action, pass to `mkActionEventNewMessage`.
  */
 export const pmMessage = (args?: {|
   ...$Rest<PmMessage, { ... }>,
@@ -378,6 +389,11 @@ const messagePropertiesFromStream = (stream1: Stream) => {
  * A stream message, by default in eg.stream sent by eg.otherUser.
  *
  * Beware! These values may not be representative.
+ *
+ * NB that the resulting value has no `flags` property.  This matches what
+ * we expect in `state.messages`, but not some other contexts; see comment
+ * on the `flags` property of `Message`.  For use in an `EVENT_NEW_MESSAGE`
+ * action, pass to `mkActionEventNewMessage`.
  */
 export const streamMessage = (args?: {|
   ...$Rest<StreamMessage, { ... }>,
@@ -415,8 +431,11 @@ export const makeMessagesState = (messages: Message[]): MessagesState =>
  * (Only stream messages for now. Feel free to add PMs, if you need them.)
  */
 
-/** An outbox message with no interesting data. */
-const outboxMessageBase: $Diff<Outbox, {| id: mixed, timestamp: mixed |}> = deepFreeze({
+/**
+ * Properties in common among PM and stream outbox messages, with no
+ *   interesting data.
+ */
+const outboxMessageBase: $Diff<OutboxBase, {| id: mixed, timestamp: mixed |}> = deepFreeze({
   isOutbox: true,
   isSent: false,
   avatar_url: selfUser.avatar_url,
@@ -434,11 +453,12 @@ const outboxMessageBase: $Diff<Outbox, {| id: mixed, timestamp: mixed |}> = deep
 });
 
 /**
- * Create an outbox message from an interesting subset of its data.
+ * Create a stream outbox message from an interesting subset of its
+ *   data.
  *
  * `.id` is always identical to `.timestamp` and should not be supplied.
  */
-export const makeOutboxMessage = (data: $Shape<$Diff<Outbox, {| id: mixed |}>>): Outbox => {
+export const streamOutbox = (data: $Shape<$Diff<StreamOutbox, {| id: mixed |}>>): StreamOutbox => {
   const { timestamp } = data;
 
   const outputTimestamp = timestamp ?? makeTime() / 1000;
@@ -683,29 +703,40 @@ export const action = deepFreeze({
 (action: {| [string]: Action |});
 
 /* ========================================================================
- * Action fragments
+ * Action factories
  *
- * Partial actions, for those action types where (a) there's some
- * boilerplate data that's useful to supply here, but (b) there's some other
- * places where a given test will almost always need to fill in specific
- * data of its own.
+ * Useful for action types where a static object of boilerplate data doesn't
+ * suffice.  Generally this is true where (a) there's some boilerplate data
+ * that's useful to supply here, but (b) there's some other places where a
+ * given test will almost always need to fill in specific data of its own.
  *
- * The properties where each test will want to fill in its own specific data
- * should be left out of these fragments.  That way, Flow can ensure the
- * test explicitly supplies the data.
+ * For action types without (b), a static example value `eg.action.foo` is
+ * enough.  For action types without (a), even that isn't necessary, because
+ * each test might as well define the action values it needs directly.
  */
 
-export const eventNewMessageActionBase /* \: $Diff<EventNewMessageAction, {| message: Message |}> */ = {
-  type: EVENT_NEW_MESSAGE,
-  // These properties are boring for most or all tests.
-  id: 1001,
-  caughtUp: {},
-  ownUserId: selfUser.user_id,
+/**
+ * An EVENT_NEW_MESSAGE action.
+ *
+ * The message argument can either have or omit a `flags` property; if
+ * omitted, it defaults to empty.  (The `message` property on an
+ * `EVENT_NEW_MESSAGE` action must have `flags`, while `Message` objects in
+ * some other contexts must not.  See comments on `Message` for details.)
+ */
+export const mkActionEventNewMessage = (
+  message: Message,
+  args?: {| caughtUp?: CaughtUpState, local_message_id?: number, ownUserId?: UserId |},
+): Action =>
+  deepFreeze({
+    type: EVENT_NEW_MESSAGE,
+    id: 1001,
+    caughtUp: {},
+    ownUserId: selfUser.user_id,
 
-  // The details of this property are typically important to what a test is
-  // testing, so we provide it explicitly in each test.
-  // message: Message,
-};
+    ...args,
+
+    message: { ...message, flags: message.flags ?? [] },
+  });
 
 // If a given action is only relevant to a single test file, no need to
-// provide a generic fragment for it here; just define the test data there.
+// provide a generic factory for it here; just define the test data there.

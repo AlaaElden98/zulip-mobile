@@ -82,10 +82,7 @@ describe('unreadPmsReducer', () => {
         },
       ]);
 
-      const action = deepFreeze({
-        ...eg.eventNewMessageActionBase,
-        message: message1,
-      });
+      const action = eg.mkActionEventNewMessage(message1);
 
       const actualState = unreadPmsReducer(initialState, action);
 
@@ -101,32 +98,47 @@ describe('unreadPmsReducer', () => {
         },
       ]);
 
-      const action = deepFreeze({
-        ...eg.eventNewMessageActionBase,
-        message: message4,
-      });
+      const action = eg.mkActionEventNewMessage(message4);
 
       const actualState = unreadPmsReducer(initialState, action);
 
       expect(actualState).toBe(initialState);
     });
 
-    test('if message is sent by self, do not mutate state', () => {
+    test('if message is marked read, do not mutate state', () => {
       const initialState = deepFreeze([]);
       const message1 = eg.pmMessage({
-        sender: eg.selfUser,
+        sender: eg.otherUser,
         recipients: [eg.otherUser, eg.selfUser],
+        flags: ['read'],
       });
 
-      const action = deepFreeze({
-        ...eg.eventNewMessageActionBase,
-        message: message1,
-        ownUserId: eg.selfUser.user_id,
-      });
+      const action = eg.mkActionEventNewMessage(message1);
 
       const actualState = unreadPmsReducer(initialState, action);
 
       expect(actualState).toBe(initialState);
+    });
+
+    test('if message is marked unread in self-PM, append to state', () => {
+      const initialState = deepFreeze([]);
+      const message1 = eg.pmMessage({
+        sender: eg.selfUser,
+        recipients: [eg.selfUser],
+      });
+
+      const action = eg.mkActionEventNewMessage(message1);
+
+      const expectedState = [
+        {
+          sender_id: eg.selfUser.user_id,
+          unread_message_ids: [message1.id],
+        },
+      ];
+
+      const actualState = unreadPmsReducer(initialState, action);
+
+      expect(actualState).toEqual(expectedState);
     });
 
     test('if message id does not exist, append to state', () => {
@@ -142,10 +154,7 @@ describe('unreadPmsReducer', () => {
         },
       ]);
 
-      const action = deepFreeze({
-        ...eg.eventNewMessageActionBase,
-        message: message4,
-      });
+      const action = eg.mkActionEventNewMessage(message4);
 
       const expectedState = [
         {
@@ -168,10 +177,7 @@ describe('unreadPmsReducer', () => {
         },
       ]);
 
-      const action = deepFreeze({
-        ...eg.eventNewMessageActionBase,
-        message: message4,
-      });
+      const action = eg.mkActionEventNewMessage(message4);
 
       const expectedState = [
         {

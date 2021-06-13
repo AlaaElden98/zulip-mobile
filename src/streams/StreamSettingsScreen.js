@@ -5,29 +5,28 @@ import { View } from 'react-native';
 import type { RouteProp } from '../react-navigation';
 import type { AppNavigationProp } from '../nav/AppNavigator';
 import * as NavigationService from '../nav/NavigationService';
-import type { Dispatch, Stream, Subscription } from '../types';
+import type { Auth, Dispatch, Stream, Subscription } from '../types';
 import { connect } from '../react-redux';
 import { delay } from '../utils/async';
 import { OptionRow, Screen, ZulipButton } from '../common';
 import { getSettings } from '../directSelectors';
-import { getIsAdmin, getStreamForId } from '../selectors';
+import { getAuth, getIsAdmin, getStreamForId } from '../selectors';
 import StreamCard from './StreamCard';
 import { IconPin, IconMute, IconNotifications, IconEdit, IconPlusSquare } from '../common/Icons';
 import {
-  toggleMuteStream,
-  togglePinStream,
+  setSubscriptionProperty,
   navigateToEditStream,
-  toggleStreamNotification,
   navigateToStreamSubscribers,
 } from '../actions';
 import styles from '../styles';
 import { getSubscriptionsById } from '../subscriptions/subscriptionSelectors';
-import { NULL_SUBSCRIPTION } from '../nullObjects';
+import * as api from '../api';
 
 type SelectorProps = $ReadOnly<{|
+  auth: Auth,
   isAdmin: boolean,
   stream: Stream,
-  subscription: Subscription,
+  subscription?: Subscription,
   userSettingStreamNotification: boolean,
 |}>;
 
@@ -42,28 +41,38 @@ type Props = $ReadOnly<{|
 class StreamSettingsScreen extends PureComponent<Props> {
   handleTogglePinStream = (newValue: boolean) => {
     const { dispatch, stream } = this.props;
-    dispatch(togglePinStream(stream.stream_id, newValue));
+    dispatch(setSubscriptionProperty(stream.stream_id, 'pin_to_top', newValue));
   };
 
   handleToggleMuteStream = (newValue: boolean) => {
     const { dispatch, stream } = this.props;
-    dispatch(toggleMuteStream(stream.stream_id, newValue));
+    dispatch(setSubscriptionProperty(stream.stream_id, 'is_muted', newValue));
   };
 
-  handleEdit = () => {
+  handlePressEdit = () => {
     const { stream } = this.props;
     NavigationService.dispatch(navigateToEditStream(stream.stream_id));
   };
 
-  handleEditSubscribers = () => {
+  handlePressEditSubscribers = () => {
     const { stream } = this.props;
     NavigationService.dispatch(navigateToStreamSubscribers(stream.stream_id));
   };
 
-  toggleStreamPushNotification = () => {
+  handlePressSubscribe = () => {
+    const { auth, stream } = this.props;
+    api.subscriptionAdd(auth, [{ name: stream.name }]);
+  };
+
+  handlePressUnsubscribe = () => {
+    const { auth, stream } = this.props;
+    api.subscriptionRemove(auth, [stream.name]);
+  };
+
+  handleToggleStreamPushNotification = () => {
     const { dispatch, subscription, stream, userSettingStreamNotification } = this.props;
-    const currentValue = subscription.push_notifications ?? userSettingStreamNotification;
-    dispatch(toggleStreamNotification(stream.stream_id, !currentValue));
+    const currentValue = subscription?.push_notifications ?? userSettingStreamNotification;
+    dispatch(setSubscriptionProperty(stream.stream_id, 'push_notifications', !currentValue));
   };
 
   render() {
@@ -72,24 +81,28 @@ class StreamSettingsScreen extends PureComponent<Props> {
     return (
       <Screen title="Stream">
         <StreamCard stream={stream} subscription={subscription} />
-        <OptionRow
-          Icon={IconPin}
-          label="Pinned"
-          value={subscription.pin_to_top}
-          onValueChange={this.handleTogglePinStream}
-        />
-        <OptionRow
-          Icon={IconMute}
-          label="Muted"
-          value={subscription.in_home_view === false}
-          onValueChange={this.handleToggleMuteStream}
-        />
-        <OptionRow
-          Icon={IconNotifications}
-          label="Notifications"
-          value={subscription.push_notifications ?? userSettingStreamNotification}
-          onValueChange={this.toggleStreamPushNotification}
-        />
+        {subscription && (
+          <>
+            <OptionRow
+              Icon={IconPin}
+              label="Pinned"
+              value={subscription.pin_to_top}
+              onValueChange={this.handleTogglePinStream}
+            />
+            <OptionRow
+              Icon={IconMute}
+              label="Muted"
+              value={subscription.in_home_view === false}
+              onValueChange={this.handleToggleMuteStream}
+            />
+            <OptionRow
+              Icon={IconNotifications}
+              label="Notifications"
+              value={subscription.push_notifications ?? userSettingStreamNotification}
+              onValueChange={this.handleToggleStreamPushNotification}
+            />
+          </>
+        )}
         <View style={styles.padding}>
           {isAdmin && (
             <ZulipButton
@@ -97,7 +110,7 @@ class StreamSettingsScreen extends PureComponent<Props> {
               Icon={IconEdit}
               text="Edit"
               secondary
-              onPress={() => delay(this.handleEdit)}
+              onPress={() => delay(this.handlePressEdit)}
             />
           )}
           <ZulipButton
@@ -105,8 +118,23 @@ class StreamSettingsScreen extends PureComponent<Props> {
             Icon={IconPlusSquare}
             text="Add subscribers"
             secondary
-            onPress={() => delay(this.handleEditSubscribers)}
+            onPress={() => delay(this.handlePressEditSubscribers)}
           />
+          {subscription ? (
+            <ZulipButton
+              style={styles.marginTop}
+              text="Unsubscribe"
+              secondary
+              onPress={() => delay(this.handlePressUnsubscribe)}
+            />
+          ) : (
+            <ZulipButton
+              style={styles.marginTop}
+              text="Subscribe"
+              secondary
+              onPress={() => delay(this.handlePressSubscribe)}
+            />
+          )}
         </View>
       </Screen>
     );
@@ -114,8 +142,9 @@ class StreamSettingsScreen extends PureComponent<Props> {
 }
 
 export default connect((state, props) => ({
+  auth: getAuth(state),
   isAdmin: getIsAdmin(state),
   stream: getStreamForId(state, props.route.params.streamId),
-  subscription: getSubscriptionsById(state).get(props.route.params.streamId) || NULL_SUBSCRIPTION,
+  subscription: getSubscriptionsById(state).get(props.route.params.streamId),
   userSettingStreamNotification: getSettings(state).streamNotification,
 }))(StreamSettingsScreen);

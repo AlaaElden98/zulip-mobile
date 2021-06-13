@@ -4,7 +4,8 @@ Run `tools/test` to run all our test suites.  This command is
 typically quite fast (5-10s, sometimes less), because it only rechecks
 tests related to the files you've changed.
 
-You can run all our tests with `tools/test --full`.
+You can run all our tests with `tools/test --all`.  We run them this
+way in our CI, e.g. when you send a PR.
 
 To see all options, run `tools/test --help`.
 
@@ -17,6 +18,16 @@ To see all options, run `tools/test --help`.
 To write a test, place a Javascript file with the `-test.js` suffix in the
 `__tests__` directory inside of any subfolder of `/src`. The test will be
 automatically picked up by the test runner.
+
+The bulk of our JS code runs the same way on both iOS and Android, but
+some of it conditions on the platform.  By default, `tools/test` runs
+our Jest tests just once, picking the platform arbitrarily, to avoid
+taking twice as long.  (See
+[architecture/testing.md](../architecture/testing.md#platform-dependent-js)
+for more discussion.)  If you're testing code that does depend on the
+platform, use the `--all` or `--platform` option (see `tools/test --help`
+for details) to be sure to exercise the case of the relevant platform,
+or both of them.
 
 
 ### Test style guide
@@ -52,12 +63,14 @@ automatically picked up by the test runner.
   be mutated and hence will eventually fail tests in case of mutation.
 
 
-## Unit tests: Android
+## Native-code tests:
+
+### Android
 
 We have a small, nascent suite of unit tests for our Android-native
 (Kotlin and Java) code.
 
-`tools/test android` runs this suite, as well as building all the
+`tools/test native` runs this suite, as well as building all the
 Android code.
 
 Tests are written in Kotlin, using [JUnit 4] and the [Truth] library.
@@ -87,6 +100,13 @@ Other sources which might be helpful to read or refer to:
 [local unit tests]: https://developer.android.com/training/testing/unit-testing/local-unit-tests
 [baeldung-junit-kotlin]: https://www.baeldung.com/junit-5-kotlin
 [baeldung-truth]: https://www.baeldung.com/google-truth
+
+
+### iOS
+
+We don't yet have native-code tests for iOS. We should try it out! A
+good incremental step will be to at least check that the build
+completes without errors.
 
 
 ## Functional tests

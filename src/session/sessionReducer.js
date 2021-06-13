@@ -1,5 +1,5 @@
 /* @flow strict-local */
-import type { Debug, Orientation, Action } from '../types';
+import type { GlobalState, Debug, Orientation, Action } from '../types';
 import {
   REHYDRATE,
   DEAD_QUEUE,
@@ -14,11 +14,17 @@ import {
   DEBUG_FLAG_TOGGLE,
   GOT_PUSH_TOKEN,
   LOGOUT,
+  DISMISS_SERVER_COMPAT_NOTICE,
 } from '../actionConstants';
 import { hasAuth } from '../account/accountsSelectors';
 
 /**
  * Miscellaneous non-persistent state about this run of the app.
+ *
+ * These state items are stored in `session.state`, and 'session' is
+ * in `discardKeys` in src/boot/store.js. That means these values
+ * won't be persisted between sessions; on startup, they'll all be
+ * initialized to their default values.
  */
 export type SessionState = {|
   eventQueueId: number,
@@ -56,6 +62,18 @@ export type SessionState = {|
   pushToken: string | null,
 
   debug: Debug,
+
+  /**
+   * Whether `ServerCompatNotice` (which we'll add soon) has been
+   *   dismissed this session.
+   *
+   * We put this in the per-session state deliberately, so that users
+   * see the notice on every startup until the server is upgraded.
+   * That's a better experience than not being able to load the realm
+   * on mobile at all, which is what will happen soon if the user
+   * doesn't act on the notice.
+   */
+  hasDismissedServerCompatNotice: boolean,
 |};
 
 const initialState: SessionState = {
@@ -70,19 +88,31 @@ const initialState: SessionState = {
   debug: {
     doNotMarkMessagesAsRead: false,
   },
+  hasDismissedServerCompatNotice: false,
 };
 
 const rehydrate = (state, action) => {
   const { payload } = action;
-  const haveApiKey = !!(payload && payload.accounts && hasAuth(payload));
+
+  /* $FlowIgnore: The actual type allows any property to be null; narrow
+       that to just the one that `hasAuth` will care about.  (What we really
+       want here is what the value of `hasAuth` will be after the rehydrate
+       is complete.  So even if some other property is null in the payload,
+       we still do want to ask `hasAuth` what it thinks.) */
+  const payloadForHasAuth = (payload: GlobalState | { accounts: null, ... } | void);
+  const haveApiKey = !!(
+    payloadForHasAuth
+    && payloadForHasAuth.accounts
+    && hasAuth(payloadForHasAuth)
+  );
+
   return {
     ...state,
     isHydrated: true,
     // On rehydration, do an initial fetch if we have access to an account
     // (indicated by the presence of an api key). Otherwise, the initial fetch
     // will be initiated on loginSuccess.
-    // NB `InitialNavigationDispatcher`'s `doInitialNavigation`
-    // depends intimately on this behavior.
+    // NB `getInitialRouteInfo` depends intimately on this behavior.
     needsInitialFetch: haveApiKey,
   };
 };
@@ -166,6 +196,12 @@ export default (state: SessionState = initialState, action: Action): SessionStat
           ...state.debug,
           [action.key]: action.value,
         },
+      };
+
+    case DISMISS_SERVER_COMPAT_NOTICE:
+      return {
+        ...state,
+        hasDismissedServerCompatNotice: true,
       };
 
     default:

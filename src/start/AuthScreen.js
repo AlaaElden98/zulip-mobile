@@ -32,14 +32,14 @@ import { encodeParamsForUrl } from '../utils/url';
 import * as webAuth from './webAuth';
 import { loginSuccess, navigateToDevAuth, navigateToPasswordAuth } from '../actions';
 import IosCompliantAppleAuthButton from './IosCompliantAppleAuthButton';
-import openLink from '../utils/openLink';
+import { openLinkEmbedded } from '../utils/openLink';
 
 /**
  * Describes a method for authenticating to the server.
  *
  * Different servers and orgs/realms accept different sets of auth methods,
  * described in the /server_settings response; see api.getServerSettings
- * and https://zulip.com/api/server-settings .
+ * and https://zulip.com/api/get-server-settings .
  */
 type AuthenticationMethodDetails = {|
   /** An identifier-style name used in the /server_settings API. */
@@ -270,7 +270,7 @@ class AuthScreen extends PureComponent<Props> {
       id_token: credential.identityToken,
     });
 
-    openLink(new URL(`/complete/apple/?${params}`, this.props.realm).toString());
+    openLinkEmbedded(new URL(`/complete/apple/?${params}`, this.props.realm).toString());
 
     // Currently, the rest is handled with the `zulip://` redirect,
     // same as in the web flow.

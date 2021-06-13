@@ -8,6 +8,7 @@ import Immutable from 'immutable';
 import { persistStore, autoRehydrate } from '../third/redux-persist';
 import type { Config } from '../third/redux-persist';
 
+import type { ReadWrite } from '../generics';
 import { ZulipVersion } from '../utils/zulipVersion';
 import { stringify, parse } from './replaceRevive';
 import type { Action, GlobalState } from '../types';
@@ -88,7 +89,7 @@ export const cacheKeys: Array<$Keys<GlobalState>> = [
  * that happens.
  */
 function dropCache(state: GlobalState): $Shape<GlobalState> {
-  const result: $Shape<GlobalState> = {};
+  const result: $Shape<ReadWrite<GlobalState>> = {};
   storeKeys.forEach(key => {
     // $FlowFixMe[incompatible-indexer]
     // $FlowFixMe[incompatible-exact]
@@ -281,6 +282,21 @@ const migrations: {| [string]: (GlobalState) => GlobalState |} = {
   '27': state => ({
     ...state,
     accounts: state.accounts.filter(a => a.email !== ''),
+  }),
+
+  // Add "open links with in-app browser" setting.
+  '28': state => ({
+    ...state,
+    settings: {
+      ...state.settings,
+      browser: 'default',
+    },
+  }),
+
+  // Make `sender_id` on `Outbox` required.
+  '29': state => ({
+    ...state,
+    outbox: state.outbox.filter(o => o.sender_id !== undefined),
   }),
 
   // TIP: When adding a migration, consider just using `dropCache`.

@@ -1,5 +1,6 @@
 /* @flow strict-local */
 import {
+  EVENT,
   REALM_INIT,
   LOGIN_SUCCESS,
   ACCOUNT_SWITCH,
@@ -8,9 +9,10 @@ import {
   LOGOUT,
   ACCOUNT_REMOVE,
 } from '../actionConstants';
-
+import { EventTypes } from '../api/eventTypes';
 import type { AccountsState, Identity, Action } from '../types';
 import { NULL_ARRAY } from '../nullObjects';
+import { ZulipVersion } from '../utils/zulipVersion';
 
 const initialState = NULL_ARRAY;
 
@@ -109,6 +111,31 @@ export default (state: AccountsState = initialState, action: Action): AccountsSt
 
     case ACCOUNT_REMOVE:
       return accountRemove(state, action);
+
+    case EVENT: {
+      const { event } = action;
+      switch (event.type) {
+        case EventTypes.restart: {
+          const { zulip_feature_level, zulip_version } = event;
+          if (zulip_feature_level === undefined || zulip_version === undefined) {
+            return state;
+          }
+
+          // TODO: Detect if the feature level has changed, indicating an upgrade;
+          //   if so, trigger a full refetch of server data.  See #4793.
+          return [
+            {
+              ...state[0],
+              zulipVersion: new ZulipVersion(zulip_version),
+              zulipFeatureLevel: zulip_feature_level,
+            },
+            ...state.slice(1),
+          ];
+        }
+        default:
+          return state;
+      }
+    }
 
     default:
       return state;

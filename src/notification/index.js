@@ -111,10 +111,18 @@ export const getNarrowFromNotificationData = (
   return pmNarrowFromRecipients(pmKeyRecipientsFromIds(ids, ownUserId));
 };
 
-const getInitialNotification = async (): Promise<Notification | null> => {
+/**
+ * Read the notification the app was started from, if any.
+ *
+ * This consumes the data; if called a second time, the result is always
+ * null.
+ *
+ * (TODO: Well, it does on Android, anyway.  #4763 is for doing so on iOS.)
+ */
+const readInitialNotification = async (): Promise<Notification | null> => {
   if (Platform.OS === 'android') {
     const { Notifications } = NativeModules;
-    return Notifications.getInitialNotification();
+    return Notifications.readInitialNotification();
   }
 
   const notification: ?PushNotificationIOS = await PushNotificationIOS.getInitialNotification();
@@ -132,8 +140,18 @@ const getInitialNotification = async (): Promise<Notification | null> => {
   return fromAPNs(data) || null;
 };
 
+/**
+ * Act on the notification-opening the app was started from, if any.
+ *
+ * That is, if the app was started by the user opening a notification, act
+ * on that; in particular, navigate to the conversation the notification was
+ * from.
+ *
+ * This consumes the relevant data; if called multiple times after the user
+ * only once opened a notification, it'll only do anything once.
+ */
 export const handleInitialNotification = async (dispatch: Dispatch) => {
-  const data = await getInitialNotification();
+  const data = await readInitialNotification();
   dispatch(narrowToNotification(data));
 };
 
@@ -250,7 +268,7 @@ export class NotificationListener {
       // On iOS, `note` should be an IOSNotifications object. The notification
       // data it returns from `getData` is unvalidated -- it comes almost
       // straight off the wire from the server.
-      this.listen('notificationOpened', (note: { getData(): JSONableDict }) => {
+      this.listen('notificationOpened', (note: { getData(): JSONableDict, ... }) => {
         const data = fromAPNs(note.getData());
         if (data) {
           this.handleNotificationOpen(data);

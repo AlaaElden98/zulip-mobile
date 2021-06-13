@@ -1,59 +1,98 @@
 #!/usr/bin/env bash
+
+# Careful! `set -e` doesn't do everything you'd think it does. In
+# fact, we don't get its benefit in any of the `run_foo` functions.
+#
+# This is because it has an effect only when it can exit the whole shell.
+# (Its full name is `set -o errexit`, and it means "exit" literally.)  See:
+#   https://www.gnu.org/software/bash/manual/bash.html#The-Set-Builtin
+#
+# When one test suite fails, we want to go on to run the other suites, so
+# we use `||` to prevent the whole script from exiting there, and that
+# defeats `set -e`.
+#
+# For now our workaround is to put `|| return` in the `run_foo` just
+# after each nontrivial command that isn't the final command in the
+# function.
 set -e
 
 ## CLI PARSING
 
 usage() {
     cat >&2 <<EOF
-usage: tools/test [--full | --diff COMMIT] [SUITES]
+usage: tools/test [OPTION]... [SUITE]...
 
 Run our tests.
 
-By default, run only on files changed in this branch,
+By default, run all suites, but only on files changed in this branch
 as found by \`tools/info changed-files\`.
 
-Options:
-  --coverage  Collect test-coverage information.  Only meaningful
-              with --full.
-  --fix       Fix issues found, where possible.
-  --full      Run on all files, not only changed files.
+What tests to run:
+  --all-files
+              Run on all files, not only changed files.
   --diff COMMIT
               Run only on files that differ from the given commit.
               (E.g., \`--diff @\` for files with uncommitted changes;
               \`--diff @~10\` for files changed in last 10 commits; or see
               \`git help revisions\` for many more ways to name a commit.)
+  --platform <ios|android|both|sloppy>
+              Run tests as if on iOS, or Android, or both. The
+              default, "sloppy", takes a shortcut in some suites,
+              so the tests run faster but full coverage of both
+              platforms isn't guaranteed. Specifically, "sloppy"
+              will run both Android and iOS native tests, but will
+              run Jest tests on only one platform (iOS). This is
+              usually fine, because the vast majority of our Jest
+              tests don't depend meaningfully on the platform.
+  --all       In the given suites, run all tests on all files. Same as
+              --all-files --platform both.
+
+Extra things to do:
+  --coverage  Collect test-coverage information.  Only meaningful
+              with --all.
+  --fix       Fix issues found, where possible.
 
 Suites:
-  android
+  native
   flow
   lint
   jest
   prettier
   deps
-
-By default, all suites are run except those identified as skipped above.
 EOF
     exit 2
 }
 
 coverage=
 files=branch
+platform=sloppy
 fix=
 suites=()
 while (( $# )); do
     case "$1" in
         --coverage) coverage=1; shift;;
         --diff) shift; files=diff:"$1"; shift;;
-        --full) files=full; shift;;
+        --all-files) files=all; shift;;
+        --platform)
+            shift;
+            case "$1" in
+                ios|android|both|sloppy) platform="$1";;
+                *) usage;;
+            esac
+            shift
+            ;;
+        --all) files=all; platform=both; shift;;
         --fix) fix=1; shift;;
-        android|flow|lint|jest|prettier|deps)
+        native|flow|lint|jest|prettier|deps)
             suites+=("$1"); shift;;
         *) usage;;
     esac
 done
 
 if [ -z "$suites" ]; then
-    suites=(android flow lint jest prettier deps)
+    # This default doesn't have to be the complete list; just be sure to
+    # document in the usage message any suites that it skips.
+    suites=(native flow lint jest prettier deps)
 fi
 
 
@@ -70,7 +109,7 @@ PATH=node_modules/.bin:"$PATH"
 # directories meaning their whole subtrees.
 files_js() {
     case "$files" in
-        full)
+        all)
             echo src/
             ;;
         branch)
@@ -87,7 +126,7 @@ files_js() {
 # True just if $files intersects the given set of paths.
 files_check() {
     case "$files" in
-        full)
+        all)
             ;;
         branch)
             ! git diff --quiet "$(tools/info base-commit)" "$@"
@@ -98,7 +137,7 @@ files_check() {
     esac
 }
 
-run_android() {
+run_native_android() {
     files_check android/ \
         || return 0
 
@@ -115,6 +154,26 @@ run_android() {
         ./gradlew -q :app:testDebugUnitTest \
             || ./gradlew :app:testDebugUnitTest || exit
     )
+}
+
+run_native_ios() {
+    :
+    # TODO: At least make an iOS build.
+}
+
+run_native() {
+    if [[ $platform == android || $platform == both || $platform == sloppy ]]; then
+        echo 'Running Android native tests...';
+        run_native_android || return
+    fi
+
+    if [[ $platform == ios || $platform == both || $platform == sloppy ]]; then
+        # TODO: Run if on macOS; otherwise, echo that these tests are
+        # skipped because they can't be run.
+
+        # echo 'Running iOS native tests...';
+        run_native_ios || return
+    fi
 }
 
 run_lint() {
@@ -142,7 +201,7 @@ run_jest() {
     # Unlike some others, this inspects "$files" for itself.
     jest_args=()
     case "$files" in
-        full)
+        all)
             if [ -n "$coverage" ]; then
                 jest_args+=( --coverage )
             fi
@@ -155,6 +214,17 @@ run_jest() {
             (( ${#file_list[@]} )) || return 0
             jest_args+=( --findRelatedTests "${file_list[@]}" )
             ;;
+    esac
+
+    case "$platform" in
+        ios) jest_args+=( --selectProjects ios );;
+        android) jest_args+=( --selectProjects android );;
+        both) jest_args+=( --selectProjects ios android );;
+
+        # This is where `sloppy` is sloppy: we just choose iOS, so the
+        # tests will run faster, but at the expense of a (relatively
+        # small) loss of coverage.
+        sloppy) jest_args+=( --selectProjects ios );;
     esac
 
     check_node || return
@@ -193,8 +263,8 @@ failed=()
 for suite in "${suites[@]}"; do
     echo "Running $suite..."
     case "$suite" in
-        android)
-            run_android
+        native)
+            run_native
             ;;
         flow)
             flow

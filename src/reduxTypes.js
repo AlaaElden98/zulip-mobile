@@ -263,6 +263,20 @@ export type RealmState = {|
 // https://github.com/zulip/zulip-mobile/issues/4009#issuecomment-619280681.
 export type ThemeName = 'default' | 'night';
 
+/** What browser the user has set to use for opening links in messages.
+ *
+ * * embedded: The in-app browser
+ * * external: The user's default browser app
+ * * default: 'external' on iOS, 'embedded' on Android
+ *
+ * Use the `shouldUseInAppBrowser` function from src/utils/openLink.js in order to
+ * parse this.
+ *
+ * See https://chat.zulip.org/#narrow/stream/48-mobile/topic/in-app.20browser
+ * for the reasoning behind these options.
+ */
+export type BrowserPreference = 'embedded' | 'external' | 'default';
+
 export type SettingsState = {|
   locale: string,
   theme: ThemeName,
@@ -270,6 +284,7 @@ export type SettingsState = {|
   onlineNotification: boolean,
   experimentalFeaturesEnabled: boolean,
   streamNotification: boolean,
+  browser: BrowserPreference,
 |};
 
 export type StreamsState = Stream[];
@@ -313,7 +328,7 @@ export type UsersState = User[];
  * See in particular `discardKeys`, `storeKeys`, and `cacheKeys`, which
  * identify which subtrees are persisted and which are not.
  */
-export type GlobalState = {|
+export type GlobalState = $ReadOnly<{|
   accounts: AccountsState,
   alertWords: AlertWordsState,
   caughtUp: CaughtUpState,
@@ -339,7 +354,7 @@ export type GlobalState = {|
   userGroups: UserGroupsState,
   userStatus: UserStatusState,
   users: UsersState,
-|};
+|}>;
 
 /** A selector returning TResult, with extra parameter TParam. */
 // Seems like this should be OutputSelector... but for whatever reason,

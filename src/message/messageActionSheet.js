@@ -119,13 +119,13 @@ deleteMessage.title = 'Delete message';
 deleteMessage.errorMessage = 'Failed to delete message';
 
 const unmuteTopic = async ({ auth, stream, topic }) => {
-  await api.unmuteTopic(auth, stream, topic);
+  await api.setTopicMute(auth, stream, topic, false);
 };
 unmuteTopic.title = 'Unmute topic';
 unmuteTopic.errorMessage = 'Failed to unmute topic';
 
 const muteTopic = async ({ auth, stream, topic }) => {
-  await api.muteTopic(auth, stream, topic);
+  await api.setTopicMute(auth, stream, topic, true);
 };
 muteTopic.title = 'Mute topic';
 muteTopic.errorMessage = 'Failed to mute topic';
@@ -166,7 +166,7 @@ deleteTopic.errorMessage = 'Failed to delete topic';
 const unmuteStream = async ({ auth, stream, subscriptions }) => {
   const sub = subscriptions.find(x => x.name === stream);
   if (sub) {
-    await api.toggleMuteStream(auth, sub.stream_id, false);
+    await api.setSubscriptionProperty(auth, sub.stream_id, 'is_muted', false);
   }
 };
 unmuteStream.title = 'Unmute stream';
@@ -175,7 +175,7 @@ unmuteStream.errorMessage = 'Failed to unmute stream';
 const muteStream = async ({ auth, stream, subscriptions }) => {
   const sub = subscriptions.find(x => x.name === stream);
   if (sub) {
-    await api.toggleMuteStream(auth, sub.stream_id, true);
+    await api.setSubscriptionProperty(auth, sub.stream_id, 'is_muted', true);
   }
 };
 muteStream.title = 'Mute stream';

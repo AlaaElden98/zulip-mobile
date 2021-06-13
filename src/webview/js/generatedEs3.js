@@ -14,6 +14,44 @@ export default `
 var compiledWebviewJs = (function (exports) {
   'use strict';
 
+  function ownKeys(object, enumerableOnly) {
+    var keys = Object.keys(object);
+
+    if (Object.getOwnPropertySymbols) {
+      var symbols = Object.getOwnPropertySymbols(object);
+
+      if (enumerableOnly) {
+        symbols = symbols.filter(function (sym) {
+          return Object.getOwnPropertyDescriptor(object, sym).enumerable;
+        });
+      }
+
+      keys.push.apply(keys, symbols);
+    }
+
+    return keys;
+  }
+
+  function _objectSpread2(target) {
+    for (var i = 1; i < arguments.length; i++) {
+      var source = arguments[i] != null ? arguments[i] : {};
+
+      if (i % 2) {
+        ownKeys(Object(source), true).forEach(function (key) {
+          _defineProperty(target, key, source[key]);
+        });
+      } else if (Object.getOwnPropertyDescriptors) {
+        Object.defineProperties(target, Object.getOwnPropertyDescriptors(source));
+      } else {
+        ownKeys(Object(source)).forEach(function (key) {
+          Object.defineProperty(target, key, Object.getOwnPropertyDescriptor(source, key));
+        });
+      }
+    }
+
+    return target;
+  }
+
   function _classCallCheck(instance, Constructor) {
     if (!(instance instanceof Constructor)) {
       throw new TypeError("Cannot call a class as a function");
@@ -51,40 +89,6 @@ var compiledWebviewJs = (function (exports) {
     return obj;
   }
 
-  function ownKeys(object, enumerableOnly) {
-    var keys = Object.keys(object);
-
-    if (Object.getOwnPropertySymbols) {
-      var symbols = Object.getOwnPropertySymbols(object);
-      if (enumerableOnly) symbols = symbols.filter(function (sym) {
-        return Object.getOwnPropertyDescriptor(object, sym).enumerable;
-      });
-      keys.push.apply(keys, symbols);
-    }
-
-    return keys;
-  }
-
-  function _objectSpread2(target) {
-    for (var i = 1; i < arguments.length; i++) {
-      var source = arguments[i] != null ? arguments[i] : {};
-
-      if (i % 2) {
-        ownKeys(Object(source), true).forEach(function (key) {
-          _defineProperty(target, key, source[key]);
-        });
-      } else if (Object.getOwnPropertyDescriptors) {
-        Object.defineProperties(target, Object.getOwnPropertyDescriptors(source));
-      } else {
-        ownKeys(Object(source)).forEach(function (key) {
-          Object.defineProperty(target, key, Object.getOwnPropertyDescriptor(source, key));
-        });
-      }
-    }
-
-    return target;
-  }
-
   var makeUserId = function makeUserId(id) {
     return id;
   };
@@ -99,64 +103,6 @@ var compiledWebviewJs = (function (exports) {
   };
 
   var InboundEventLogger = function () {
-    _createClass(InboundEventLogger, null, [{
-      key: "scrubInboundEvent",
-      value: function scrubInboundEvent(event) {
-        switch (event.type) {
-          case 'content':
-            {
-              return {
-                type: event.type,
-                scrollMessageId: event.scrollMessageId,
-                auth: 'redacted',
-                content: placeholdersDivTagFromContent(event.content),
-                updateStrategy: event.updateStrategy
-              };
-            }
-
-          case 'fetching':
-            {
-              return {
-                type: event.type,
-                showMessagePlaceholders: event.showMessagePlaceholders,
-                fetchingOlder: event.fetchingOlder,
-                fetchingNewer: event.fetchingNewer
-              };
-            }
-
-          case 'typing':
-            {
-              return {
-                type: event.type,
-                content: event.content !== ''
-              };
-            }
-
-          case 'ready':
-            {
-              return {
-                type: event.type
-              };
-            }
-
-          case 'read':
-            {
-              return {
-                type: event.type,
-                messageIds: event.messageIds
-              };
-            }
-
-          default:
-            {
-              return {
-                type: event.type
-              };
-            }
-        }
-      }
-    }]);
-
     function InboundEventLogger() {
       _classCallCheck(this, InboundEventLogger);
 
@@ -223,6 +169,62 @@ var compiledWebviewJs = (function (exports) {
           };
 
           this._capturedInboundEventItems.push(item);
+        }
+      }
+    }], [{
+      key: "scrubInboundEvent",
+      value: function scrubInboundEvent(event) {
+        switch (event.type) {
+          case 'content':
+            {
+              return {
+                type: event.type,
+                scrollMessageId: event.scrollMessageId,
+                auth: 'redacted',
+                content: placeholdersDivTagFromContent(event.content),
+                updateStrategy: event.updateStrategy
+              };
+            }
+
+          case 'fetching':
+            {
+              return {
+                type: event.type,
+                showMessagePlaceholders: event.showMessagePlaceholders,
+                fetchingOlder: event.fetchingOlder,
+                fetchingNewer: event.fetchingNewer
+              };
+            }
+
+          case 'typing':
+            {
+              return {
+                type: event.type,
+                content: event.content !== ''
+              };
+            }
+
+          case 'ready':
+            {
+              return {
+                type: event.type
+              };
+            }
+
+          case 'read':
+            {
+              return {
+                type: event.type,
+                messageIds: event.messageIds
+              };
+            }
+
+          default:
+            {
+              return {
+                type: event.type
+              };
+            }
         }
       }
     }]);
@@ -517,6 +519,10 @@ var compiledWebviewJs = (function (exports) {
 
   function previousMessage(start) {
     return walkToMessage(start.previousElementSibling, 'previousElementSibling');
+  }
+
+  function nextMessage(start) {
+    return walkToMessage(start.nextElementSibling, 'nextElementSibling');
   }
 
   function isVisible(element, top, bottom) {
@@ -861,6 +867,15 @@ var compiledWebviewJs = (function (exports) {
     scrollEventsDisabled = false;
   };
 
+  var revealMutedMessages = function revealMutedMessages(message) {
+    var messageNode = message;
+
+    do {
+      messageNode.setAttribute('data-mute-state', 'shown');
+      messageNode = nextMessage(messageNode);
+    } while (messageNode && messageNode.classList.contains('message-brief'));
+  };
+
   var requireAttribute = function requireAttribute(e, name) {
     var value = e.getAttribute(name);
 
@@ -1003,9 +1018,17 @@ var compiledWebviewJs = (function (exports) {
       return;
     }
 
+    var targetType = target.matches('.header') ? 'header' : target.matches('a') ? 'link' : 'message';
+    var messageNode = target.closest('.message');
+
+    if (targetType === 'message' && messageNode && messageNode.getAttribute('data-mute-state') === 'hidden') {
+      revealMutedMessages(messageNode);
+      return;
+    }
+
     sendMessage({
       type: 'longPress',
-      target: target.matches('.header') ? 'header' : target.matches('a') ? 'link' : 'message',
+      target: targetType,
       messageId: getMessageIdFromNode(target),
       href: target.matches('a') ? requireAttribute(target, 'href') : null
     });
@@ -1051,6 +1074,8 @@ var compiledWebviewJs = (function (exports) {
   });
 
   exports.handleInitialLoad = handleInitialLoad;
+
+  Object.defineProperty(exports, '__esModule', { value: true });
 
   return exports;
 

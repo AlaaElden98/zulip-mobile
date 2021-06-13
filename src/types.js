@@ -3,7 +3,15 @@ import type { IntlShape } from 'react-intl';
 import type { DangerouslyImpreciseStyleProp } from 'react-native/Libraries/StyleSheet/StyleSheet';
 
 import type { SubsetProperties } from './generics';
-import type { Auth, Topic, Message, ReactionType, UserId } from './api/apiTypes';
+import type {
+  Auth,
+  Topic,
+  Message,
+  PmMessage,
+  StreamMessage,
+  ReactionType,
+  UserId,
+} from './api/apiTypes';
 import type { ZulipVersion } from './utils/zulipVersion';
 import type { PmKeyUsers } from './utils/recipient';
 
@@ -145,6 +153,76 @@ export type TopicExtended = {|
 |};
 
 /**
+ * Properties in common among the two different flavors of a
+ * `Outbox`: `PmOutbox` and `StreamOutbox`.
+ */
+// TODO: This distinction between `PmOutbox` and `StreamOutbox` doesn't yet
+//   function as fully as `PmMessage` and `StreamMessage`: for properties
+//   like `type` and `display_recipient` where the types differ between
+//   `PmMessage` and `StreamMessage`, it currently loses the information
+//   that those differences are connected to each other.
+export type OutboxBase = $ReadOnly<{|
+  /** Used for distinguishing from a `Message` object. */
+  isOutbox: true,
+
+  /**
+   * False until we successfully send the message, then true.
+   *
+   * As described in the type's jsdoc (above), once we've sent the message
+   * we still keep the `Outbox` object around for a (usually short) time
+   * until we can replace it with a `Message` object.
+   */
+  isSent: boolean,
+
+  // `markdownContent` doesn't exist in `Message`.
+  // It's used for sending the message to the server.
+  markdownContent: string,
+
+  /* eslint-disable flowtype/generic-spacing */
+  ...SubsetProperties<
+    // Could use `MessageBase` here.  Then Flow would check that the listed
+    // properties are in `MessageBase`, rather than just in both branches of
+    // `Message` but potentially separately.
+    Message,
+    {|
+      // TODO: Some of these have different types on `PmMessage` vs.
+      //   `StreamMessage`; move those to `PmOutbox` and `StreamOutbox`
+      //   respectively, to match that distinction here.
+      avatar_url: mixed,
+      content: mixed,
+      display_recipient: mixed,
+      id: mixed,
+      reactions: mixed,
+      sender_id: mixed,
+      sender_email: mixed,
+      sender_full_name: mixed,
+      subject: mixed,
+      timestamp: mixed,
+      type: mixed,
+    |},
+  >,
+|}>;
+
+export type PmOutbox = $ReadOnly<{|
+  ...OutboxBase,
+
+  ...SubsetProperties<PmMessage, {||}>,
+|}>;
+
+export type StreamOutbox = $ReadOnly<{|
+  ...OutboxBase,
+
+  // TODO(#3764): Make stream_id required.  First need to start supplying it
+  //   in the Outbox values we create; compare a1fad7ca9, for sender_id.
+  //
+  //   Once it is required, it should move from here to the second type
+  //   argument passed to `SubsetProperties` of `StreamMessage`, below.
+  stream_id?: number,
+
+  ...SubsetProperties<StreamMessage, {||}>,
+|}>;
+
+/**
  * A message we're in the process of sending.
  *
  * We use these objects for two purposes:
@@ -165,48 +243,7 @@ export type TopicExtended = {|
  * This type most often appears in the union `Message | Outbox`, and so its
  * properties are deliberately similar to those of `Message`.
  */
-export type Outbox = $ReadOnly<{|
-  /** Used for distinguishing from a `Message` object. */
-  isOutbox: true,
-
-  /**
-   * False until we successfully send the message, then true.
-   *
-   * As described in the type's jsdoc (above), once we've sent the message
-   * we still keep the `Outbox` object around for a (usually short) time
-   * until we can replace it with a `Message` object.
-   */
-  isSent: boolean,
-
-  // `markdownContent` doesn't exist in `Message`.
-  // It's used for sending the message to the server.
-  markdownContent: string,
-
-  // The remaining fields are modeled on `Message`.
-
-  // TODO(#3764): Make sender_id required.  Needs a migration to drop Outbox
-  //   values that lack it; which is fine once the release that adds it has
-  //   been out for a few weeks.
-  //   (Also drop the hack line about it in MessageLike.)
-  sender_id?: UserId,
-
-  /* eslint-disable flowtype/generic-spacing */
-  ...SubsetProperties<
-    Message,
-    {|
-      avatar_url: mixed,
-      content: mixed,
-      display_recipient: mixed,
-      id: mixed,
-      reactions: mixed,
-      sender_email: mixed,
-      sender_full_name: mixed,
-      subject: mixed,
-      timestamp: mixed,
-      type: mixed,
-    |},
-  >,
-|}>;
+export type Outbox = PmOutbox | StreamOutbox;
 
 /**
  * MessageLike: Imprecise alternative to `Message | Outbox`.
@@ -241,7 +278,7 @@ export type MessageLike =
   | $ReadOnly<{|
       // $Shape<T> is unsound, per Flow docs, but $ReadOnly<$Shape<T>> is not
       ...$Shape<{| [$Keys<Message>]: void |}>,
-      sender_id?: UserId, // TODO: Drop this once required in Outbox.
+      stream_id?: number, // TODO: Drop this once required in StreamOutbox.
       ...Outbox,
     |}>;
 

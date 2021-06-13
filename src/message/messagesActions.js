@@ -3,7 +3,7 @@ import * as NavigationService from '../nav/NavigationService';
 import type { Narrow, Dispatch, GetState } from '../types';
 import { getAuth } from '../selectors';
 import { getMessageIdFromLink, getNarrowFromLink } from '../utils/internalLinks';
-import openLink from '../utils/openLink';
+import { openLinkWithUserPreference } from '../utils/openLink';
 import { navigateToChat } from '../nav/navActions';
 import { FIRST_UNREAD_ANCHOR } from '../anchor';
 import { getStreamsById } from '../subscriptions/subscriptionSelectors';
@@ -35,10 +35,10 @@ export const messageLinkPress = (href: string) => async (
     const anchor = getMessageIdFromLink(href, auth.realm);
     dispatch(doNarrow(narrow, anchor));
   } else if (!isUrlOnRealm(href, auth.realm)) {
-    openLink(href);
+    openLinkWithUserPreference(href, state.settings);
   } else {
     const url =
       (await api.tryGetFileTemporaryUrl(href, auth)) ?? new URL(href, auth.realm).toString();
-    openLink(url);
+    openLinkWithUserPreference(url, state.settings);
   }
 };

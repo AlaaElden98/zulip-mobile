@@ -8,6 +8,7 @@ import type { FeatherGlyphs } from 'react-native-vector-icons/Feather';
 import IoniconsIcon from 'react-native-vector-icons/Ionicons';
 import MaterialIcon from 'react-native-vector-icons/MaterialIcons';
 import SimpleLineIcons from 'react-native-vector-icons/SimpleLineIcons';
+import FontAwesome from 'react-native-vector-icons/FontAwesome';
 
 /**
  * The props actually accepted by icon components in r-n-vector-icons.
@@ -70,7 +71,6 @@ export const IconWindows = makeIcon(IoniconsIcon, 'logo-windows');
 export const IconDiagnostics = makeIcon(Feather, 'activity');
 export const IconNotifications = makeIcon(Feather, 'bell');
 export const IconLanguage = makeIcon(Feather, 'globe');
-export const IconNight = makeIcon(Feather, 'moon');
 export const IconSettings = makeIcon(Feather, 'settings');
 export const IconRight = makeIcon(Feather, 'chevron-right');
 export const IconPlusCircle = makeIcon(Feather, 'plus-circle');
@@ -85,3 +85,4 @@ export const IconEdit = makeIcon(Feather, 'edit');
 export const IconPlusSquare = makeIcon(Feather, 'plus-square');
 export const IconVideo = makeIcon(Feather, 'video');
 export const IconWarning = makeIcon(IoniconsIcon, 'warning');
+export const IconUserMuted = makeIcon(FontAwesome, 'user');

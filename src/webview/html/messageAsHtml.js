@@ -5,6 +5,7 @@ import template from './template';
 import type {
   AggregatedReaction,
   FlagsState,
+  GetText,
   Message,
   MessageLike,
   Outbox,
@@ -82,14 +83,22 @@ $!${message.content}
 export const flagsStateToStringList = (flags: FlagsState, id: number): string[] =>
   Object.keys(flags).filter(key => flags[key][id]);
 
-export default (backgroundData: BackgroundData, message: Message | Outbox, isBrief: boolean) => {
+export default (
+  backgroundData: BackgroundData,
+  message: Message | Outbox,
+  isBrief: boolean,
+  _: GetText,
+) => {
   const { id, timestamp } = message;
   const flagStrings = flagsStateToStringList(backgroundData.flags, id);
+  const isUserMuted = !!message.sender_id && backgroundData.mutedUsers.has(message.sender_id);
+
   const divOpenHtml = template`
     <div
      class="message ${isBrief ? 'message-brief' : 'message-full'}"
      id="msg-${id}"
      data-msg-id="${id}"
+     data-mute-state="${isUserMuted ? 'hidden' : 'shown'}"
      $!${flagStrings.map(flag => template`data-${flag}="true" `).join('')}
     >`;
   const messageTime = shortTime(new Date(timestamp * 1000), backgroundData.twentyFourHourTime);
@@ -134,6 +143,13 @@ $!${divOpenHtml}
   <div class="static-timestamp">${messageTime}</div>
 </div>
 `;
+  const mutedMessageHtml = isUserMuted
+    ? template`
+<div class="special-message muted-message-explanation">
+  ${_('This message was hidden because it is from a user you have muted. Long-press to view.')}
+</div>
+`
+    : '';
 
   return template`
 $!${divOpenHtml}
@@ -144,6 +160,7 @@ $!${divOpenHtml}
     $!${subheaderHtml}
     $!${bodyHtml}
   </div>
+  $!${mutedMessageHtml}
 </div>
 `;
 };

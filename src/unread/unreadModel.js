@@ -1,5 +1,6 @@
 /* @flow strict-local */
 import Immutable from 'immutable';
+import invariant from 'invariant';
 
 import type { Action } from '../actionTypes';
 import type {
@@ -22,7 +23,6 @@ import {
   MESSAGE_FETCH_COMPLETE,
   REALM_INIT,
 } from '../actionConstants';
-import { getOwnUserId } from '../users/userSelectors';
 
 //
 //
@@ -146,7 +146,8 @@ function streamsReducer(
         return state;
       }
 
-      if (message.sender_id === getOwnUserId(globalState)) {
+      invariant(message.flags, 'message in EVENT_NEW_MESSAGE must have flags');
+      if (message.flags.includes('read')) {
         return state;
       }
 

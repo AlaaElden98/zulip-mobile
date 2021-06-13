@@ -1,4 +1,6 @@
 /* @flow strict-local */
+import invariant from 'invariant';
+
 import type { Action } from '../types';
 import type { UnreadPmsState } from './unreadModelTypes';
 import {
@@ -20,11 +22,12 @@ const eventNewMessage = (state, action) => {
     return state;
   }
 
-  if (recipientsOfPrivateMessage(action.message).length !== 2) {
+  if (recipientsOfPrivateMessage(action.message).length > 2) {
     return state;
   }
 
-  if (action.ownUserId === action.message.sender_id) {
+  invariant(action.message.flags, 'message in EVENT_NEW_MESSAGE must have flags');
+  if (action.message.flags.includes('read')) {
     return state;
   }
 
