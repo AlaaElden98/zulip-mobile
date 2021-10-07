@@ -1,24 +1,20 @@
 /* @flow strict-local */
-import React, { PureComponent } from 'react';
+import React, { useContext } from 'react';
+import type { Node } from 'react';
 import { View } from 'react-native';
 
-import type { ThemeData } from '../styles';
-import { ThemeContext } from '../styles';
+import { ThemeContext, createStyleSheet } from '../styles';
 
-export default class LineSeparator extends PureComponent<{||}> {
-  static contextType = ThemeContext;
-  context: ThemeData;
+const componentStyles = createStyleSheet({
+  lineSeparator: {
+    height: 1,
+    margin: 4,
+  },
+});
 
-  styles = {
-    lineSeparator: {
-      height: 1,
-      margin: 4,
-    },
-  };
-
-  render() {
-    return (
-      <View style={[this.styles.lineSeparator, { backgroundColor: this.context.cardColor }]} />
-    );
-  }
+export default function LineSeparator(props: {||}): Node {
+  const themeContext = useContext(ThemeContext);
+  return (
+    <View style={[componentStyles.lineSeparator, { backgroundColor: themeContext.cardColor }]} />
+  );
 }

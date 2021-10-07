@@ -1,8 +1,9 @@
 /* @flow strict-local */
+// $FlowFixMe[untyped-import]
 import omit from 'lodash.omit';
 import Immutable from 'immutable';
 
-import type { MessagesState, Action } from '../types';
+import type { MessagesState, Message, Action } from '../types';
 import {
   REALM_INIT,
   LOGOUT,
@@ -83,9 +84,9 @@ export default (state: MessagesState = initialState, action: Action): MessagesSt
     case EVENT_REACTION_ADD:
       return state.update(
         action.message_id,
-        oldMessage =>
+        <M: Message>(oldMessage: M): M =>
           oldMessage && {
-            ...oldMessage,
+            ...(oldMessage: M),
             reactions: oldMessage.reactions.concat({
               emoji_name: action.emoji_name,
               user_id: action.user_id,
@@ -98,9 +99,9 @@ export default (state: MessagesState = initialState, action: Action): MessagesSt
     case EVENT_REACTION_REMOVE:
       return state.update(
         action.message_id,
-        oldMessage =>
+        <M: Message>(oldMessage: M): M =>
           oldMessage && {
-            ...oldMessage,
+            ...(oldMessage: M),
             reactions: oldMessage.reactions.filter(
               x => !(x.emoji_name === action.emoji_name && x.user_id === action.user_id),
             ),
@@ -113,9 +114,9 @@ export default (state: MessagesState = initialState, action: Action): MessagesSt
     case EVENT_SUBMESSAGE:
       return state.update(
         action.message_id,
-        message =>
+        <M: Message>(message: M): M =>
           message && {
-            ...message,
+            ...(message: M),
             submessages: [
               ...(message.submessages || []),
               {
@@ -133,40 +134,49 @@ export default (state: MessagesState = initialState, action: Action): MessagesSt
       return state.deleteAll(action.messageIds);
 
     case EVENT_UPDATE_MESSAGE:
-      return state.update(
-        action.message_id,
-        oldMessage =>
-          oldMessage && {
-            ...oldMessage,
-            content: action.rendered_content || oldMessage.content,
-            subject: action.subject || oldMessage.subject,
-            subject_links: action.subject_links || oldMessage.subject_links,
-            edit_history: [
-              action.orig_rendered_content
-                ? action.orig_subject !== undefined
-                  ? {
-                      prev_rendered_content: action.orig_rendered_content,
-                      prev_subject: oldMessage.subject,
-                      timestamp: action.edit_timestamp,
-                      prev_rendered_content_version: action.prev_rendered_content_version,
-                      user_id: action.user_id,
-                    }
-                  : {
-                      prev_rendered_content: action.orig_rendered_content,
-                      timestamp: action.edit_timestamp,
-                      prev_rendered_content_version: action.prev_rendered_content_version,
-                      user_id: action.user_id,
-                    }
-                : {
+      return state.update(action.message_id, <M: Message>(oldMessage: M): M => {
+        if (!oldMessage) {
+          return oldMessage;
+        }
+        const messageWithNewCommonFields: M = {
+          ...(oldMessage: M),
+          content: action.rendered_content || oldMessage.content,
+          edit_history: [
+            action.orig_rendered_content
+              ? action.orig_subject !== undefined
+                ? {
+                    prev_rendered_content: action.orig_rendered_content,
                     prev_subject: oldMessage.subject,
                     timestamp: action.edit_timestamp,
+                    prev_rendered_content_version: action.prev_rendered_content_version,
                     user_id: action.user_id,
-                  },
-              ...(oldMessage.edit_history || NULL_ARRAY),
-            ],
-            last_edit_timestamp: action.edit_timestamp,
-          },
-      );
+                  }
+                : {
+                    prev_rendered_content: action.orig_rendered_content,
+                    timestamp: action.edit_timestamp,
+                    prev_rendered_content_version: action.prev_rendered_content_version,
+                    user_id: action.user_id,
+                  }
+              : {
+                  prev_subject: oldMessage.subject,
+                  timestamp: action.edit_timestamp,
+                  user_id: action.user_id,
+                },
+            ...(oldMessage.edit_history || NULL_ARRAY),
+          ],
+          last_edit_timestamp: action.edit_timestamp,
+        };
+
+        return messageWithNewCommonFields.type === 'stream'
+          ? {
+              ...messageWithNewCommonFields,
+              subject: action.subject || messageWithNewCommonFields.subject,
+              subject_links: action.subject_links || messageWithNewCommonFields.subject_links,
+            }
+          : {
+              ...messageWithNewCommonFields,
+            };
+      });
 
     default:
       return state;

@@ -11,7 +11,7 @@ import {
 } from '../actionConstants';
 import { makeUserId } from '../api/idTypes';
 
-import type { Action, Message, Outbox, UserId } from '../types';
+import type { Action, PmMessage, PmOutbox, UserId } from '../types';
 import { recipientsOfPrivateMessage } from '../utils/recipient';
 import { ZulipVersion } from '../utils/zulipVersion';
 
@@ -20,7 +20,7 @@ import { ZulipVersion } from '../utils/zulipVersion';
 // but this is cleaner, and 2.1 is out long enough that few people, if any,
 // will be running a 2.1-dev version anymore (and nobody should be.)
 // TODO(server-2.1): Delete this and all code conditioned on older than it.
-export const MIN_RECENTPMS_SERVER_VERSION = new ZulipVersion('2.1');
+export const MIN_RECENTPMS_SERVER_VERSION: ZulipVersion = new ZulipVersion('2.1');
 
 //
 //
@@ -31,7 +31,11 @@ export const MIN_RECENTPMS_SERVER_VERSION = new ZulipVersion('2.1');
 // User IDs, excluding self, sorted numerically, joined with commas.
 export opaque type PmConversationKey = string;
 
-/** PRIVATE.  Exported only for tests. */
+/**
+ * PRIVATE.  Exported only for tests.
+ *
+ * Sorts `ids` in-place.
+ */
 // Input must have the exact right (multi-)set of users.  Needn't be sorted.
 export function keyOfExactUsers(ids: UserId[]): PmConversationKey {
   return ids.sort((a, b) => a - b).join(',');
@@ -42,9 +46,11 @@ function keyOfUsers(ids: UserId[], ownUserId: UserId): PmConversationKey {
   return keyOfExactUsers(ids.filter(id => id !== ownUserId));
 }
 
-// Input must indeed be a PM, else throws.
-function keyOfPrivateMessage(msg: Message | Outbox, ownUserId: UserId): PmConversationKey {
-  return keyOfUsers(recipientsOfPrivateMessage(msg).map(r => r.id), ownUserId);
+function keyOfPrivateMessage(msg: PmMessage | PmOutbox, ownUserId: UserId): PmConversationKey {
+  return keyOfUsers(
+    recipientsOfPrivateMessage(msg).map(r => r.id),
+    ownUserId,
+  );
 }
 
 /** The users in the conversation, other than self. */
@@ -65,13 +71,13 @@ export function usersOfKey(key: PmConversationKey): UserId[] {
  * kept up to date as we learn about new or newly-fetched messages.
  */
 // (Compare the webapp's implementation, in static/js/pm_conversations.js.)
-export type PmConversationsState = {|
+export type PmConversationsState = $ReadOnly<{|
   // The latest message ID in each conversation.
   map: Immutable.Map<PmConversationKey, number>,
 
   // The keys of the map, sorted by latest message descending.
   sorted: Immutable.List<PmConversationKey>,
-|};
+|}>;
 
 const initialState: PmConversationsState = { map: Immutable.Map(), sorted: Immutable.List() };
 
@@ -173,7 +179,10 @@ function insertMessage(state, message, ownUserId) {
   return insert(state, keyOfPrivateMessage(message, ownUserId), message.id);
 }
 
-export function reducer(state: PmConversationsState = initialState, action: Action) {
+export function reducer(
+  state: PmConversationsState = initialState,
+  action: Action,
+): PmConversationsState {
   switch (action.type) {
     case LOGOUT:
     case LOGIN_SUCCESS:
@@ -184,7 +193,8 @@ export function reducer(state: PmConversationsState = initialState, action: Acti
       // TODO optimize; this is quadratic (but so is the webapp's version?!)
       let st = initialState;
       for (const r of action.data.recent_private_conversations ?? []) {
-        st = insert(st, keyOfExactUsers(r.user_ids), r.max_message_id);
+        const key = keyOfExactUsers([...r.user_ids]);
+        st = insert(st, key, r.max_message_id);
       }
       return st;
     }

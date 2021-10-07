@@ -1,6 +1,7 @@
 /* @flow strict-local */
 
 import React, { PureComponent } from 'react';
+import type { Node } from 'react';
 import { View } from 'react-native';
 
 import type { Narrow } from '../types';
@@ -15,7 +16,7 @@ import {
   isStreamNarrow,
   isTopicNarrow,
   isSearchNarrow,
-  canSendToNarrow,
+  showComposeBoxOnNarrow,
 } from '../utils/narrow';
 
 const styles = createStyleSheet({
@@ -51,7 +52,7 @@ type Props = $ReadOnly<{|
 |}>;
 
 export default class NoMessages extends PureComponent<Props> {
-  render() {
+  render(): Node {
     const { narrow } = this.props;
 
     const message = messages.find(x => x.isFunc(narrow)) || {};
@@ -59,7 +60,7 @@ export default class NoMessages extends PureComponent<Props> {
     return (
       <View style={styles.container}>
         <Label style={styles.text} text={message.text} />
-        {canSendToNarrow(narrow) ? <Label text="Why not start the conversation?" /> : null}
+        {showComposeBoxOnNarrow(narrow) ? <Label text="Why not start the conversation?" /> : null}
       </View>
     );
   }

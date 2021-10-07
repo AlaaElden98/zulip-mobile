@@ -1,44 +1,36 @@
 /* @flow strict-local */
 
-import React, { PureComponent } from 'react';
+import React, { useCallback } from 'react';
+import type { Node } from 'react';
 
 import type { RouteProp } from '../react-navigation';
 import type { AppNavigationProp } from '../nav/AppNavigator';
-import type { Dispatch } from '../types';
-import { connect } from '../react-redux';
-import { Screen, OptionButton } from '../common';
-import openLink from '../utils/openLink';
-import { getCurrentRealm } from '../selectors';
+import { useSelector } from '../react-redux';
+import { Screen, NestedNavRow } from '../common';
+import { openLinkEmbedded } from '../utils/openLink';
+import { getRealmUrl } from '../selectors';
 
 type Props = $ReadOnly<{|
   navigation: AppNavigationProp<'legal'>,
   route: RouteProp<'legal', void>,
-
-  dispatch: Dispatch,
-  realm: URL,
 |}>;
 
-class LegalScreen extends PureComponent<Props> {
-  openTermsOfService = () => {
-    const { realm } = this.props;
-    openLink(new URL('/terms/?nav=no', realm).toString());
-  };
+/** (NB this is a per-account screen: it leads to this realm's policies.) */
+export default function LegalScreen(props: Props): Node {
+  const realm = useSelector(getRealmUrl);
 
-  openPrivacyPolicy = () => {
-    const { realm } = this.props;
-    openLink(new URL('/privacy/?nav=no', realm).toString());
-  };
+  const openTermsOfService = useCallback(() => {
+    openLinkEmbedded(new URL('/terms/?nav=no', realm).toString());
+  }, [realm]);
 
-  render() {
-    return (
-      <Screen title="Legal">
-        <OptionButton label="Terms of service" onPress={this.openTermsOfService} />
-        <OptionButton label="Privacy policy" onPress={this.openPrivacyPolicy} />
-      </Screen>
-    );
-  }
+  const openPrivacyPolicy = useCallback(() => {
+    openLinkEmbedded(new URL('/privacy/?nav=no', realm).toString());
+  }, [realm]);
+
+  return (
+    <Screen title="Legal">
+      <NestedNavRow label="Terms of service" onPress={openTermsOfService} />
+      <NestedNavRow label="Privacy policy" onPress={openPrivacyPolicy} />
+    </Screen>
+  );
 }
-
-export default connect(state => ({
-  realm: getCurrentRealm(state),
-}))(LegalScreen);

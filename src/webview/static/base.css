@@ -131,11 +131,28 @@ body {
 .loading {
   display: flex;
   word-wrap: break-word;
+  /* This value is used for messageReadSlop in src/webview/js/js.js, if
+   * updating one, please update the other */
   padding: 16px;
   -webkit-tap-highlight-color: transparent;
 }
 .message-brief {
+  /* This value is used for messageReadSlop in src/webview/js/js.js, if
+   * updating one, please update the other */
   padding: 0 16px 16px 80px;
+}
+
+.message-brief[data-mute-state="hidden"] {
+  display: none;
+}
+
+.message[data-mute-state="hidden"] > .avatar,
+.message[data-mute-state="hidden"] > .content {
+  display: none;
+}
+
+.message[data-mute-state="shown"] > .muted-message-explanation {
+  display: none;
 }
 
 #message-loading {
@@ -151,8 +168,8 @@ body {
   border-radius: 50%;
   margin: 16px auto;
   font-size: 10px;
-  border: 3px solid hsla(170, 48%, 54%, 0.25);
-  border-left: 3px solid hsla(170, 48%, 54%, 0.75);
+  border: 3px solid hsla(222, 99%, 69%, 0.25);
+  border-left: 3px solid hsla(222, 99%, 69%, 0.75);
   animation: spin 1s linear infinite;
 }
 .outbox-spinner {
@@ -205,13 +222,17 @@ body {
   z-index: 200;
   right: 5px;
   bottom: 15px;
+  border-radius: 50%;
+  transition: opacity 0.25s ease-in-out;
+  -webkit-transition: opacity 0.25s ease-in-out;
 }
 #scroll-bottom a {
   display: block;
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: hsla(170, 48%, 54%, 0.5);
+  background: hsla(222, 99%, 69%, 0.5);
+  -webkit-tap-highlight-color: transparent;
 }
 #scroll-bottom .text {
   clip: rect(0 0 0 0);
@@ -220,10 +241,17 @@ body {
   height: 1px;
   width: 1px;
 }
+#scroll-bottom:active{
+  background-color: hsl(170, 48%, 54%);
+}
 #scroll-bottom svg {
   width: 32px;
   height: 32px;
   fill: hsla(0, 0%, 100%, 0.75);
+}
+#scroll-bottom.hidden {
+  display: block; /* Remove this when the generic .hidden rule is removed */
+  opacity: 0;
 }
 
 /*
@@ -277,11 +305,12 @@ body {
  Inside a message, outside its contents.
  */
 
-[data-mentioned="true"], [data-wildcard_mentioned="true"] {
+[data-mentioned="true"][data-mute-state="shown"],
+[data-wildcard_mentioned="true"][data-mute-state="shown"] {
   background: hsla(0, 100%, 50%, 0.05);
 }
 .message:not([data-read="true"]) {
-  box-shadow: inset 4px 0 hsl(170, 48%, 54%);
+  box-shadow: inset 4px 0 hsl(222, 99%, 69%);
 }
 .message[data-read="true"] {
   box-shadow: inset 4px 0 transparent;
@@ -295,7 +324,7 @@ body {
  * The sender's avatar. If changing the size here, be sure to change
  * the size we request for the avatar image file in the corresponding
  * HTML-generating code (see messageTypingAsHtml.js and
- * messageAsHtml.js).
+ * message.js in src/webview/html/).
  */
 .avatar,
 .loading-avatar {
@@ -402,9 +431,9 @@ body {
   vertical-align: top;
 }
 .self-voted {
-  color: hsl(170, 48%, 54%);
-  border: 1px solid hsl(170, 48%, 54%);
-  background: hsla(177.1, 69.7%, 46.7%, 0.1);
+  color: hsl(222, 99%, 69%);
+  border: 1px solid hsl(222, 99%, 69%);
+  background: hsla(222, 99%, 69%, 0.1);
 }
 
 /*
@@ -560,8 +589,20 @@ hr {
   border-top: 1px solid hsla(0, 0%, 50%, 0.5);
 }
 
-/* Our own "sorry, unsupported" message for widgets. */
-.widget {
+h1, h2, h3, h4, h5, h6 {
+  font-size: 100%;
+  font-weight: 600;
+  /* line-height doesn't seem to be needed on mobile, but it's here just for
+   * the sake of being consistent with the webapp */
+  line-height: 1.4;
+  margin-top: 0;
+  margin-bottom: 5px;
+  text-decoration: underline;
+}
+
+/* Our own "sorry, unsupported" message for widgets.
+   Also used for showing that a message was sent by a muted user. */
+.special-message {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -570,6 +611,16 @@ hr {
   background: hsla(0, 0%, 50%, 0.1);
   border: 1px dashed hsla(0, 0%, 50%, 0.5);
   border-radius: 0.5rem;
+}
+
+/* LaTeX styling */
+.katex-display {
+   /* KaTeX sometimes overdraws its bounding box by a little, so we
+      enlarge its scrolling area by stealing 3px from the margin
+      of the enclosing <p>. */
+  margin: -3px 0;
+  padding: 3px 0;
+  overflow: auto hidden;
 }
 
 /* Taken from the `.spoiler-block` section of the webapp's styles, as
@@ -644,4 +695,51 @@ hr {
 }
 .spoiler-block .spoiler-arrow.spoiler-button-open::after {
   transform: rotate(90deg) translate(10px, 0);
+}
+
+/* Poll styling */
+
+.poll-widget {
+  border: hsl(0, 0%, 50%) 1px solid;
+  padding: 2px 8px 2px 10px;
+  border-radius: 10px;
+}
+
+.poll-question {
+  font-size: 1.2rem;
+  margin-bottom: 8px;
+  border-bottom: 1px solid hsla(0, 0%, 60%, 0.2);
+}
+
+.poll-widget > ul {
+  padding: 0px;
+}
+
+.poll-widget > ul > li {
+  list-style: none;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+}
+
+.poll-vote {
+  background-color: hsla(0, 0%, 0%, 0);
+  border: 1.5px solid hsl(0, 0%, 50%);
+  border-radius: 8px;
+  height: 36px;
+  min-width: 36px;
+  padding: 1px 8px;
+  font-weight: bold;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.poll-vote[data-voted="true"] {
+  border: 1.5px solid hsl(222, 99%, 69%);
+  background-color: hsla(222, 99%, 69%, 25%);
+}
+
+.poll-option {
+  margin-left: 8px;
+  width: 100%;
 }

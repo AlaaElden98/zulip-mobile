@@ -103,7 +103,7 @@ Thanks as always to our kind volunteer translators.
 
 Has a new language made major progress?  See docs on updating
 the languages offered in the UI:
-  https://github.com/zulip/zulip-mobile/blob/master/docs/howto/translations.md
+  https://github.com/zulip/zulip-mobile/blob/main/docs/howto/translations.md
 EOF
 else
     err_echo 'Step 1: ...none.'
@@ -126,7 +126,7 @@ EOF
     cat >&2 <<EOF
 
 To finish adding it, see docs:
-  https://github.com/zulip/zulip-mobile/blob/master/docs/howto/translations.md
+  https://github.com/zulip/zulip-mobile/blob/main/docs/howto/translations.md
 
 Then rerun this script to complete the rest of the sync.
 EOF
@@ -147,6 +147,18 @@ if ! git diff-files --quiet; then
     git commit -a -m '
 i18n: Sync recently-added message strings across languages.
 '
+
+    cat >&2 <<'EOF'
+
+There were new message strings.
+
+Please push this commit promptly, to keep these changes separate from any
+new translations picked up the next time someone runs `tools/tx-sync`.
+
+If your branch has other changes that still need work or review, please
+rebase/cherry-pick the automated `tools/tx-sync` changes so you can push
+them promptly in isolation.
+EOF
 else
     err_echo 'Step 3: ...none.'
 fi

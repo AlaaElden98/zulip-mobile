@@ -1,75 +1,111 @@
 /* @flow strict-local */
 
-import React, { PureComponent } from 'react';
+import React, { useContext } from 'react';
+import type { Node } from 'react';
 import { Text, View, TouchableWithoutFeedback } from 'react-native';
+// $FlowFixMe[untyped-import]
+import { useActionSheet } from '@expo/react-native-action-sheet';
 
-import type { Narrow, Stream, Subscription, Dispatch } from '../types';
+import { TranslationContext } from '../boot/TranslationProvider';
+import type { Narrow } from '../types';
 import styles, { createStyleSheet } from '../styles';
-import { connect } from '../react-redux';
+import { useSelector, useDispatch } from '../react-redux';
 import StreamIcon from '../streams/StreamIcon';
 import { isTopicNarrow, topicOfNarrow } from '../utils/narrow';
-import { getStreamInNarrow } from '../selectors';
-import { showToast } from '../utils/info';
-
-type SelectorProps = {|
-  stream: Subscription | {| ...Stream, in_home_view: boolean |},
-|};
+import {
+  getAuth,
+  getMute,
+  getFlags,
+  getSubscriptionsById,
+  getStreamsById,
+  getOwnUser,
+  getStreamInNarrow,
+  getSettings,
+} from '../selectors';
+import { showStreamActionSheet, showTopicActionSheet } from '../action-sheets';
+import type { ShowActionSheetWithOptions } from '../action-sheets';
+import { getUnread } from '../unread/unreadModel';
 
 type Props = $ReadOnly<{|
   narrow: Narrow,
   color: string,
-
-  dispatch: Dispatch,
-  ...SelectorProps,
 |}>;
 
-class TitleStream extends PureComponent<Props> {
-  styles = createStyleSheet({
-    outer: {
-      flex: 1,
-      flexDirection: 'column',
-      alignItems: 'flex-start',
-      justifyContent: 'flex-start',
-    },
-    streamRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-    },
-  });
+const componentStyles = createStyleSheet({
+  outer: {
+    flex: 1,
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    height: '100%',
+  },
+  streamRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+});
 
-  render() {
-    const { narrow, stream, color } = this.props;
+export default function TitleStream(props: Props): Node {
+  const { narrow, color } = props;
+  const dispatch = useDispatch();
+  const stream = useSelector(state => getStreamInNarrow(state, narrow));
+  const backgroundData = useSelector(state => ({
+    auth: getAuth(state),
+    mute: getMute(state),
+    streams: getStreamsById(state),
+    subscriptions: getSubscriptionsById(state),
+    unread: getUnread(state),
+    ownUser: getOwnUser(state),
+    flags: getFlags(state),
+    userSettingStreamNotification: getSettings(state).streamNotification,
+  }));
 
-    return (
-      <View style={this.styles.outer}>
-        <View style={this.styles.streamRow}>
+  const showActionSheetWithOptions: ShowActionSheetWithOptions = useActionSheet()
+    .showActionSheetWithOptions;
+  const _ = useContext(TranslationContext);
+
+  return (
+    <TouchableWithoutFeedback
+      onLongPress={
+        isTopicNarrow(narrow)
+          ? () => {
+              showTopicActionSheet({
+                showActionSheetWithOptions,
+                callbacks: { dispatch, _ },
+                backgroundData,
+                streamId: stream.stream_id,
+                topic: topicOfNarrow(narrow),
+              });
+            }
+          : () => {
+              showStreamActionSheet({
+                showActionSheetWithOptions,
+                callbacks: { dispatch, _ },
+                backgroundData,
+                streamId: stream.stream_id,
+              });
+            }
+      }
+    >
+      <View style={componentStyles.outer}>
+        <View style={componentStyles.streamRow}>
           <StreamIcon
             style={styles.halfMarginRight}
             isMuted={!stream.in_home_view}
             isPrivate={stream.invite_only}
             color={color}
-            size={20}
+            size={styles.navTitle.fontSize}
           />
           <Text style={[styles.navTitle, { color }]} numberOfLines={1} ellipsizeMode="tail">
             {stream.name}
           </Text>
         </View>
         {isTopicNarrow(narrow) && (
-          <TouchableWithoutFeedback
-            onLongPress={() => {
-              showToast(topicOfNarrow(narrow));
-            }}
-          >
-            <Text style={[styles.navSubtitle, { color }]} numberOfLines={1} ellipsizeMode="tail">
-              {topicOfNarrow(narrow)}
-            </Text>
-          </TouchableWithoutFeedback>
+          <Text style={[styles.navSubtitle, { color }]} numberOfLines={1} ellipsizeMode="tail">
+            {topicOfNarrow(narrow)}
+          </Text>
         )}
       </View>
-    );
-  }
+    </TouchableWithoutFeedback>
+  );
 }
-
-export default connect<SelectorProps, _, _>((state, props) => ({
-  stream: getStreamInNarrow(state, props.narrow),
-}))(TitleStream);

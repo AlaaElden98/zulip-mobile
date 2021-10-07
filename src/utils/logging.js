@@ -1,7 +1,8 @@
 /* @flow strict-local */
-import type { Scope, SeverityType, EventHint } from '@sentry/react-native';
+import type { Scope, SeverityType } from '@sentry/react-native';
 import {
-  getCurrentHub,
+  captureException,
+  captureMessage,
   configureScope,
   Severity,
   withScope as withScopeImpl,
@@ -94,47 +95,19 @@ export function setTagsFromServerVersion(zulipVersion: ?ZulipVersion) {
 /**
  * Log an event (a string or Error) at some arbitrary severity.
  *
- * The error will be logged to Sentry, including a stack trace. The stack trace
- * is taken from `err` if an `Error` object, and otherwise synthesized from the
- * call site.
- *
  * Returns a Sentry event_id, although this is not expected to be useful.
  */
-const logToSentry = (event: string | Error, level: SeverityType, extras: Extras): string => {
-  let message: string;
-  let hint: EventHint;
-
-  if (event instanceof Error) {
-    // eslint-disable-next-line prefer-destructuring
-    message = event.message;
-    hint = { originalException: event };
-  } else {
-    // Synthesize the event's stack trace. (The static API does this for us, at
-    // least sometimes; but we're calling in at one level lower.)
-    message = event;
-    try {
-      throw new Error(event);
-    } catch (err) {
-      hint = { syntheticException: err };
-    }
-  }
-
-  return withScope(scope => {
+const logToSentry = (event: string | Error, level: SeverityType, extras: Extras): string =>
+  withScope(scope => {
+    scope.setLevel(level);
     scope.setExtras(extras);
 
-    // The static API's `captureException` doesn't allow passing strings, and its
-    // counterpart `captureMessage` doesn't allow passing stacktraces.
-    // Fortunately, the quasi-internal "Hub" API exists, and is reasonably
-    // well-documented:
-    //
-    // https://docs.sentry.io/development/sdk-dev/unified-api/#hub
-    //
-    // (There is a `captureEvent` method that allows both explicitly; but it also
-    // expects a great deal of other information which we would have to
-    // synthesize, and which has no user-facing documentation.)
-    return getCurrentHub().captureMessage(message, level, hint);
+    if (event instanceof Error) {
+      return captureException(event, scope);
+    } else {
+      return captureMessage(event, scope);
+    }
   });
-};
 
 type LogParams = {|
   consoleMethod: mixed => void,
@@ -195,7 +168,7 @@ const makeLogFunction = ({ consoleMethod, severity }: LogParams): LogFunction =>
  * failure to reach the server), consider `logging.warn`.
  *
  * See also:
- *  * `logging.warn` for logging at lower severity
+ *  * `logging.warn` and `logging.info` for logging at lower severity
  *
  * @param event A string describing the nature of the event to be logged, or an
  *   exception whose `.message` is such a string. Related events should have
@@ -220,6 +193,7 @@ export const error: (event: string | Error, extras?: Extras) => void = makeLogFu
  *
  * See also:
  *  * `logging.error` for logging at higher severity
+ *  * `logging.info` for logging at lower severity
  *
  * @param event A string describing the nature of the event to be logged, or an
  *   exception whose `.message` is such a string. Related events should have
@@ -231,3 +205,20 @@ export const warn: (event: string | Error, extras?: Extras) => void = makeLogFun
   consoleMethod: console.warn,
   severity: Severity.Warning,
 });
+
+/**
+ * Log an event at "info" severity.
+ *
+ * The event will be logged to the console as appropriate.
+ *
+ * This will *not* log any information to Sentry.  Consider also calling
+ * `Sentry.addBreadcrumb`.
+ *
+ * See also:
+ *  * `logging.warn` and `logging.error` for logging at higher severity
+ */
+export const info = (event: string | Error | { ... }) => {
+  if (config.enableErrorConsoleLogging) {
+    console.log(event);
+  }
+};

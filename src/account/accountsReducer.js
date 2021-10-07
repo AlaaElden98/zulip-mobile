@@ -1,6 +1,6 @@
 /* @flow strict-local */
 import {
-  REALM_ADD,
+  EVENT,
   REALM_INIT,
   LOGIN_SUCCESS,
   ACCOUNT_SWITCH,
@@ -9,44 +9,19 @@ import {
   LOGOUT,
   ACCOUNT_REMOVE,
 } from '../actionConstants';
-
+import { EventTypes } from '../api/eventTypes';
 import type { AccountsState, Identity, Action } from '../types';
 import { NULL_ARRAY } from '../nullObjects';
+import { ZulipVersion } from '../utils/zulipVersion';
 
 const initialState = NULL_ARRAY;
-
-const realmAdd = (state, action) => {
-  const accountIndex = state.findIndex(
-    account => account.realm.toString() === action.realm.toString(),
-  );
-
-  if (accountIndex !== -1) {
-    const newAccount = {
-      ...state[accountIndex],
-      zulipFeatureLevel: action.zulipFeatureLevel,
-      zulipVersion: action.zulipVersion,
-    };
-    return [newAccount, ...state.slice(0, accountIndex), ...state.slice(accountIndex + 1)];
-  }
-
-  return [
-    {
-      realm: action.realm,
-      apiKey: '',
-      email: '',
-      ackedPushToken: null,
-      zulipFeatureLevel: action.zulipFeatureLevel,
-      zulipVersion: action.zulipVersion,
-    },
-    ...state,
-  ];
-};
 
 const realmInit = (state, action) => [
   {
     ...state[0],
+    userId: action.data.user_id,
     zulipFeatureLevel: action.data.zulip_feature_level ?? 0,
-    zulipVersion: action.zulipVersion,
+    zulipVersion: new ZulipVersion(action.data.zulip_version),
   },
   ...state.slice(1),
 ];
@@ -62,8 +37,7 @@ const accountSwitch = (state, action) => {
 const findAccount = (state: AccountsState, identity: Identity): number => {
   const { realm, email } = identity;
   return state.findIndex(
-    account =>
-      account.realm.toString() === realm.toString() && (!account.email || account.email === email),
+    account => account.realm.toString() === realm.toString() && account.email === email,
   );
 };
 
@@ -72,12 +46,20 @@ const loginSuccess = (state, action) => {
   const accountIndex = findAccount(state, { realm, email });
   if (accountIndex === -1) {
     return [
-      { realm, email, apiKey, ackedPushToken: null, zulipVersion: null, zulipFeatureLevel: null },
+      {
+        realm,
+        email,
+        apiKey,
+        userId: null,
+        ackedPushToken: null,
+        zulipVersion: null,
+        zulipFeatureLevel: null,
+      },
       ...state,
     ];
   }
   return [
-    { ...state[accountIndex], email, apiKey, ackedPushToken: null },
+    { ...state[accountIndex], apiKey, ackedPushToken: null },
     ...state.slice(0, accountIndex),
     ...state.slice(accountIndex + 1),
   ];
@@ -117,9 +99,6 @@ const accountRemove = (state, action) => {
 
 export default (state: AccountsState = initialState, action: Action): AccountsState => {
   switch (action.type) {
-    case REALM_ADD:
-      return realmAdd(state, action);
-
     case REALM_INIT:
       return realmInit(state, action);
 
@@ -141,6 +120,31 @@ export default (state: AccountsState = initialState, action: Action): AccountsSt
 
     case ACCOUNT_REMOVE:
       return accountRemove(state, action);
+
+    case EVENT: {
+      const { event } = action;
+      switch (event.type) {
+        case EventTypes.restart: {
+          const { zulip_feature_level, zulip_version } = event;
+          if (zulip_feature_level === undefined || zulip_version === undefined) {
+            return state;
+          }
+
+          // TODO: Detect if the feature level has changed, indicating an upgrade;
+          //   if so, trigger a full refetch of server data.  See #4793.
+          return [
+            {
+              ...state[0],
+              zulipVersion: new ZulipVersion(zulip_version),
+              zulipFeatureLevel: zulip_feature_level,
+            },
+            ...state.slice(1),
+          ];
+        }
+        default:
+          return state;
+      }
+    }
 
     default:
       return state;

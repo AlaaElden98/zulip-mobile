@@ -1,14 +1,15 @@
 /* @flow strict-local */
 
-import React, { PureComponent } from 'react';
+import React from 'react';
+import type { Node } from 'react';
 import { View } from 'react-native';
 
-import type { Narrow, Dispatch } from '../types';
+import type { Narrow } from '../types';
 import { createStyleSheet } from '../styles';
-import { connect } from '../react-redux';
+import { useSelector } from '../react-redux';
 import { getUnreadCountForNarrow } from '../selectors';
 import { Label, RawLabel } from '../common';
-import MarkUnreadButton from './MarkUnreadButton';
+import MarkAsReadButton from './MarkAsReadButton';
 import AnimatedScaleComponent from '../animation/AnimatedScaleComponent';
 
 const styles = createStyleSheet({
@@ -35,36 +36,24 @@ const styles = createStyleSheet({
   },
 });
 
-type SelectorProps = {|
-  unreadCount: number,
-|};
-
 type Props = $ReadOnly<{|
   narrow: Narrow,
-
-  dispatch: Dispatch,
-  ...SelectorProps,
 |}>;
 
-class UnreadNotice extends PureComponent<Props> {
-  render() {
-    const { narrow, unreadCount } = this.props;
+export default function UnreadNotice(props: Props): Node {
+  const { narrow } = props;
+  const unreadCount = useSelector(state => getUnreadCountForNarrow(state, narrow));
 
-    return (
-      <AnimatedScaleComponent visible={unreadCount > 0} style={styles.unreadContainer}>
-        <View style={styles.unreadTextWrapper}>
-          <RawLabel style={styles.unreadNumber} text={unreadCount.toString()} />
-          <Label
-            style={styles.unreadText}
-            text={unreadCount === 1 ? 'unread message' : 'unread messages'}
-          />
-        </View>
-        <MarkUnreadButton narrow={narrow} />
-      </AnimatedScaleComponent>
-    );
-  }
+  return (
+    <AnimatedScaleComponent visible={unreadCount > 0} style={styles.unreadContainer}>
+      <View style={styles.unreadTextWrapper}>
+        <RawLabel style={styles.unreadNumber} text={unreadCount.toString()} />
+        <Label
+          style={styles.unreadText}
+          text={unreadCount === 1 ? 'unread message' : 'unread messages'}
+        />
+      </View>
+      <MarkAsReadButton narrow={narrow} />
+    </AnimatedScaleComponent>
+  );
 }
-
-export default connect<SelectorProps, _, _>((state, props) => ({
-  unreadCount: getUnreadCountForNarrow(state, props.narrow),
-}))(UnreadNotice);

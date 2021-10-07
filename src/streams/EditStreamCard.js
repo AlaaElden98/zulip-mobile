@@ -1,13 +1,14 @@
 /* @flow strict-local */
 import React, { PureComponent } from 'react';
+import type { Node } from 'react';
 import { View } from 'react-native';
 
-import { Input, Label, OptionRow, ZulipButton } from '../common';
+import { Input, Label, SwitchRow, ZulipButton } from '../common';
 import styles, { createStyleSheet } from '../styles';
 import { IconPrivate } from '../common/Icons';
 
 const componentStyles = createStyleSheet({
-  optionRow: {
+  switchRow: {
     paddingLeft: 8,
     paddingRight: 8,
   },
@@ -30,31 +31,31 @@ type State = {|
 |};
 
 export default class EditStreamCard extends PureComponent<Props, State> {
-  state = {
+  state: State = {
     name: this.props.initialValues.name,
     description: this.props.initialValues.description,
     isPrivate: this.props.initialValues.invite_only,
   };
 
-  handlePerformAction = () => {
+  handlePerformAction: () => void = () => {
     const { onComplete } = this.props;
     const { name, description, isPrivate } = this.state;
     onComplete(name, description, isPrivate);
   };
 
-  handleNameChange = (name: string) => {
+  handleNameChange: string => void = name => {
     this.setState({ name });
   };
 
-  handleDescriptionChange = (description: string) => {
+  handleDescriptionChange: string => void = description => {
     this.setState({ description });
   };
 
-  handleIsPrivateChange = (isPrivate: boolean) => {
+  handleIsPrivateChange: boolean => void = isPrivate => {
     this.setState({ isPrivate });
   };
 
-  render() {
+  render(): Node {
     const { initialValues, isNewStream } = this.props;
     const { name } = this.state;
 
@@ -75,8 +76,8 @@ export default class EditStreamCard extends PureComponent<Props, State> {
           defaultValue={initialValues.description}
           onChangeText={this.handleDescriptionChange}
         />
-        <OptionRow
-          style={componentStyles.optionRow}
+        <SwitchRow
+          style={componentStyles.switchRow}
           Icon={IconPrivate}
           label="Private"
           value={this.state.isPrivate}

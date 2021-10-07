@@ -1,19 +1,14 @@
 /* @flow strict-local */
-import React, { PureComponent } from 'react';
+import React, { useState, useEffect } from 'react';
+import type { Node } from 'react';
 import { View } from 'react-native';
 import type { ViewStyle } from 'react-native/Libraries/StyleSheet/StyleSheet';
 import * as AppleAuthentication from 'expo-apple-authentication';
-import { connect } from '../../react-redux';
+import { useSelector } from '../../react-redux';
 
 import type { SubsetProperties } from '../../generics';
 import Custom from './Custom';
-import type { ThemeName } from '../../reduxTypes';
-import type { Dispatch } from '../../types';
-import { getSettings } from '../../selectors';
-
-type SelectorProps = $ReadOnly<{|
-  theme: ThemeName,
-|}>;
+import { getGlobalSettings } from '../../selectors';
 
 type Props = $ReadOnly<{|
   // See `ZulipButton`'s `style` prop, where a comment discusses this
@@ -26,13 +21,6 @@ type Props = $ReadOnly<{|
     |},
   >,
   onPress: () => void | Promise<void>,
-
-  dispatch: Dispatch,
-  ...SelectorProps,
-|}>;
-
-type State = $ReadOnly<{|
-  isNativeButtonAvailable: boolean | void,
 |}>;
 
 /**
@@ -45,40 +33,40 @@ type State = $ReadOnly<{|
  * Apple", but without marking it with a different style from the
  * other buttons.
  */
-class IosCompliantAppleAuthButton extends PureComponent<Props, State> {
-  state = {
-    isNativeButtonAvailable: undefined,
-  };
+export default function IosCompliantAppleAuthButton(props: Props): Node {
+  const { style, onPress } = props;
+  const theme = useSelector(state => getGlobalSettings(state).theme);
+  const [isNativeButtonAvailable, setIsNativeButtonAvailable] = useState<boolean | void>(undefined);
 
-  async componentDidMount() {
-    this.setState({ isNativeButtonAvailable: await AppleAuthentication.isAvailableAsync() });
-  }
-
-  render() {
-    const { style, onPress, theme } = this.props;
-    const { isNativeButtonAvailable } = this.state;
-    if (isNativeButtonAvailable === undefined) {
-      return <View style={[{ height: 44 }, style]} />;
-    } else if (isNativeButtonAvailable) {
-      return (
-        <AppleAuthentication.AppleAuthenticationButton
-          buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
-          buttonStyle={
-            theme === 'default'
-              ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE_OUTLINE
-              : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
-          }
-          cornerRadius={22}
-          style={[{ height: 44 }, style]}
-          onPress={onPress}
-        />
-      );
-    } else {
-      return <Custom style={style} onPress={onPress} theme={theme} />;
+  useEffect(() => {
+    async function getAndSetIsAvailable() {
+      setIsNativeButtonAvailable(await AppleAuthentication.isAvailableAsync());
     }
+    // This nesting is odd, but we get an ESLint warning if we make the
+    // `useEffect` callback itself an async function. See
+    //   https://github.com/zulip/zulip-mobile/pull/4906#discussion_r673557179
+    // and
+    //   https://github.com/facebook/react/issues/14326.
+    getAndSetIsAvailable();
+  }, []);
+
+  if (isNativeButtonAvailable === undefined) {
+    return <View style={[{ height: 44 }, style]} />;
+  } else if (isNativeButtonAvailable) {
+    return (
+      <AppleAuthentication.AppleAuthenticationButton
+        buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+        buttonStyle={
+          theme === 'default'
+            ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE_OUTLINE
+            : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
+        }
+        cornerRadius={22}
+        style={[{ height: 44 }, style]}
+        onPress={onPress}
+      />
+    );
+  } else {
+    return <Custom style={style} onPress={onPress} theme={theme} />;
   }
 }
-
-export default connect(state => ({
-  theme: getSettings(state).theme,
-}))(IosCompliantAppleAuthButton);

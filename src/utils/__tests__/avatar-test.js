@@ -1,7 +1,15 @@
 /* @flow strict-local */
+// $FlowFixMe[untyped-import]
 import md5 from 'blueimp-md5';
 
-import { AvatarURL, GravatarURL, FallbackAvatarURL, UploadedAvatarURL } from '../avatar';
+import {
+  AvatarURL,
+  GravatarURL,
+  FallbackAvatarURL,
+  UploadedAvatarURL,
+  DEFAULT_UPLOAD_SIZE_PX,
+  MEDIUM_UPLOAD_SIZE_PX,
+} from '../avatar';
 import * as eg from '../../__tests__/lib/exampleData';
 
 describe('AvatarURL', () => {
@@ -50,7 +58,9 @@ describe('AvatarURL', () => {
   });
 });
 
-const SIZES_TO_TEST = [24, 32, 48, 80, 200];
+const SIZES_TO_TEST = [24, 32, 48, 80, 200, DEFAULT_UPLOAD_SIZE_PX, MEDIUM_UPLOAD_SIZE_PX];
+const SIZES_OVER_DEFAULT = SIZES_TO_TEST.filter(s => s > DEFAULT_UPLOAD_SIZE_PX);
+const SIZES_AT_MOST_DEFAULT = SIZES_TO_TEST.filter(s => s <= DEFAULT_UPLOAD_SIZE_PX);
 
 describe('GravatarURL', () => {
   test('serializes/deserializes correctly', () => {
@@ -132,34 +142,37 @@ describe('UploadedAvatarURL', () => {
     });
   });
 
-  test('if an absolute URL, just use it', () => {
+  test('s3 uploads: appends -medum.png for sizes over default', () => {
     const instance = UploadedAvatarURL.validateAndConstructInstance({
       realm: new URL('https://chat.zulip.org'),
       absoluteOrRelativeUrl:
         'https://zulip-avatars.s3.amazonaws.com/13/430713047f2cffed661f84e139a64f864f17f286?x=x&version=5',
     });
-    SIZES_TO_TEST.forEach(size => {
-      expect(instance.get(size).toString()).toMatch(
+    SIZES_OVER_DEFAULT.forEach(size => {
+      expect(instance.get(size).toString()).toEqual(
+        'https://zulip-avatars.s3.amazonaws.com/13/430713047f2cffed661f84e139a64f864f17f286-medium.png?x=x&version=5',
+      );
+    });
+    SIZES_AT_MOST_DEFAULT.forEach(size => {
+      expect(instance.get(size).toString()).toEqual(
         'https://zulip-avatars.s3.amazonaws.com/13/430713047f2cffed661f84e139a64f864f17f286?x=x&version=5',
       );
     });
   });
 
-  test('converts *.png to *-medium.png for sizes over 100', () => {
+  test('local uploads: converts *.png to *-medium.png for sizes over default', () => {
     const realm = new URL('https://chat.zulip.org');
     const instance = UploadedAvatarURL.validateAndConstructInstance({
       realm,
       absoluteOrRelativeUrl:
         '/user_avatars/2/e35cdbc4771c5e4b94e705bf6ff7cca7fa1efcae.png?x=x&version=2',
     });
-    const sizesOver100 = SIZES_TO_TEST.filter(s => s > 100);
-    const sizesAtMost100 = SIZES_TO_TEST.filter(s => s <= 100);
-    sizesOver100.forEach(size => {
+    SIZES_OVER_DEFAULT.forEach(size => {
       expect(instance.get(size).toString()).toEqual(
         'https://chat.zulip.org/user_avatars/2/e35cdbc4771c5e4b94e705bf6ff7cca7fa1efcae-medium.png?x=x&version=2',
       );
     });
-    sizesAtMost100.forEach(size => {
+    SIZES_AT_MOST_DEFAULT.forEach(size => {
       expect(instance.get(size).toString()).toEqual(
         'https://chat.zulip.org/user_avatars/2/e35cdbc4771c5e4b94e705bf6ff7cca7fa1efcae.png?x=x&version=2',
       );
@@ -187,8 +200,12 @@ describe('FallbackAvatarURL', () => {
       realm: new URL('https://chat.zulip.org'),
       userId,
     });
-
-    SIZES_TO_TEST.forEach(size => {
+    SIZES_OVER_DEFAULT.forEach(size => {
+      expect(instance.get(size).toString()).toEqual(
+        `https://chat.zulip.org/avatar/${userId.toString()}/medium`,
+      );
+    });
+    SIZES_AT_MOST_DEFAULT.forEach(size => {
       expect(instance.get(size).toString()).toEqual(
         `https://chat.zulip.org/avatar/${userId.toString()}`,
       );

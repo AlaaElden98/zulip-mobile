@@ -1,11 +1,26 @@
 /* @flow strict-local */
-import AsyncStorage from '@react-native-community/async-storage';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import invariant from 'invariant';
 import { NativeModules } from 'react-native';
+
 import * as logging from '../utils/logging';
 
+const NODE_ENV = process.env.NODE_ENV;
+
+/** Assert the given string is plausibly the JSON encoding of some value. */
+function assertPlausiblyJSONEncoded(value: string) {
+  // To keep it quick, just look at the first character.  This should be
+  // enough to catch bugs that are just sending arbitrary strings.
+  //
+  // Every JSON value is either null, true, false,
+  // or a number, string, array, or object.
+  invariant(/^[ntf\-0-9"[{]/.test(value), 'value must be JSON-encoded');
+}
+
 export default class ZulipAsyncStorage {
-  static async getItem(key: string, callback: (error: ?Error, result: ?string) => void) {
-    let result = await AsyncStorage.getItem(key);
+  static async getItem(key: string): Promise<string | null> {
+    const item = await AsyncStorage.getItem(key);
+
     // It's possible that getItem() is called on uncompressed state, for
     // example when a user updates their app from a version without
     // compression to a version with compression.  So we need to detect that.
@@ -22,13 +37,14 @@ export default class ZulipAsyncStorage {
     // E.g., `zlib base64` means DATA is a base64 encoding of a zlib
     // encoding of the underlying data.  We call the "z|TRANSFORMS|" part
     // the "header" of the string.
-    if (result !== null && result.startsWith('z')) {
-      const header = result.substring(0, result.indexOf('|', result.indexOf('|') + 1) + 1);
+    if (item !== null && item.startsWith('z')) {
+      // In this block, `item` is compressed state.
+      const header = item.substring(0, item.indexOf('|', item.indexOf('|') + 1) + 1);
       if (
         NativeModules.TextCompressionModule
         && header === NativeModules.TextCompressionModule.header
       ) {
-        result = await NativeModules.TextCompressionModule.decompress(result);
+        return NativeModules.TextCompressionModule.decompress(item);
       } else {
         // Panic! If we are confronted with an unknown format, there is
         // nothing we can do to save the situation. Log an error and ignore
@@ -36,32 +52,56 @@ export default class ZulipAsyncStorage {
         // their version of the app.
         const err = new Error(`No decompression module found for format ${header}`);
         logging.error(err);
-        if (callback) {
-          callback(err, null);
-        }
         throw err;
       }
     }
-    if (callback) {
-      callback(undefined, result);
-    }
-    return result;
+
+    // Uncompressed state
+    return item;
   }
 
-  static async setItem(key: string, value: string, callback: ?(error: ?Error) => void) {
-    if (!NativeModules.TextCompressionModule) {
-      return AsyncStorage.setItem(key, value, callback);
+  /** (The value must be a result of `JSON.stringify`.) */
+  // The invariant that the value is JSON is relied on by `getItem`, to
+  // guarantee that our compression header can't appear in uncompressed data.
+  static async setItem(key: string, value: string): Promise<mixed> {
+    if (NODE_ENV !== 'production') {
+      assertPlausiblyJSONEncoded(value);
     }
+
     return AsyncStorage.setItem(
       key,
-      await NativeModules.TextCompressionModule.compress(value),
-      callback,
+      NativeModules.TextCompressionModule
+        ? await NativeModules.TextCompressionModule.compress(value)
+        : value,
     );
   }
 
-  static removeItem = AsyncStorage.removeItem;
+  /** (Each value must be a result of `JSON.stringify`.) */
+  // The invariant that the value is JSON is relied on by `getItem`, to
+  // guarantee that our compression header can't appear in uncompressed data.
+  static async multiSet(keyValuePairs: Array<Array<string>>): Promise<mixed> {
+    if (NODE_ENV !== 'production') {
+      // eslint-disable-next-line no-unused-vars
+      for (const [_, value] of keyValuePairs) {
+        assertPlausiblyJSONEncoded(value);
+      }
+    }
 
-  static getAllKeys = AsyncStorage.getAllKeys;
+    return AsyncStorage.multiSet(
+      NativeModules.TextCompressionModule
+        ? await Promise.all(
+            keyValuePairs.map(async ([key, value]) => [
+              key,
+              await NativeModules.TextCompressionModule.compress(value),
+            ]),
+          )
+        : keyValuePairs,
+    );
+  }
 
-  static clear = AsyncStorage.clear;
+  static removeItem: typeof AsyncStorage.removeItem = AsyncStorage.removeItem;
+
+  static getAllKeys: typeof AsyncStorage.getAllKeys = AsyncStorage.getAllKeys;
+
+  static clear: typeof AsyncStorage.clear = AsyncStorage.clear;
 }

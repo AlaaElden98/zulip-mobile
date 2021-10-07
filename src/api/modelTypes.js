@@ -34,7 +34,31 @@ export type RealmEmojiById = $ReadOnly<{|
   [id: string]: ImageEmojiType,
 |}>;
 
+/**
+ * The only way servers before feature level 54 represent linkifiers.
+ */
 export type RealmFilter = [string, string, number];
+
+/**
+ * The way servers at feature level 54+ can represent linkifiers.
+ *
+ * Currently, this new format can be converted to the old without loss of
+ * information, so we do that at the edge and continue to represent the data
+ * internally with the old format.
+ */
+// TODO:
+// - When we've moved to a shared markdown implementation (#4242),
+//   change our internal representation to be the new
+//   `realm_linkifiers` format. (When doing so, also don't forget to
+//   change various variable and type definition names to be like
+//   `realm_linkifiers`.)
+// - When we drop support for servers older than 54, we can remove all
+//   our code that knows about the `realm_filters` format.
+export type RealmLinkifier = $ReadOnly<{|
+  id: number,
+  pattern: string,
+  url_format: string,
+|}>;
 
 //
 //
@@ -44,10 +68,10 @@ export type RealmFilter = [string, string, number];
 //
 //
 
-export type DevUser = {|
+export type DevUser = $ReadOnly<{|
   realm_uri: string,
   email: string,
-|};
+|}>;
 
 /**
  * A Zulip user, which might be a human or a bot, as found in one realm.
@@ -56,11 +80,11 @@ export type DevUser = {|
  * `realm_non_active_users` of a `/register` response.
  *
  * For details on the properties, see the Zulip API docs on `/users`:
- *   https://zulip.com/api/get-all-users#response
+ *   https://zulip.com/api/get-users#response
  * which returns almost the same set of properties.
  *
  * See also the comments on `UserProfile` in the server (lineno is approx.):
- *   https://github.com/zulip/zulip/blob/master/zerver/models.py#L734
+ *   https://github.com/zulip/zulip/blob/main/zerver/models.py#L734
  * Most properties correspond to fields on `UserProfile`, and many are
  * described most usefully there.
  *
@@ -77,7 +101,7 @@ export type DevUser = {|
  *    different part of a `/register` response
  *  * `UserOrBot` for a convenience union of the two
  */
-export type User = {|
+export type User = $ReadOnly<{|
   user_id: UserId,
   email: string,
 
@@ -132,7 +156,7 @@ export type User = {|
   // see also e3aed0f7b (in 2.0.0)
   // (This one doesn't appear in `/users` responses.)
   profile_data?: empty, // TODO describe actual type
-|};
+|}>;
 
 /**
  * A "cross-realm bot", a bot user shared across the realms on a Zulip server.
@@ -146,7 +170,7 @@ export type User = {|
  *    realm are, like human users, represented by a `User` value.
  *  * `UserOrBot`, a convenience union
  */
-export type CrossRealmBot = {|
+export type CrossRealmBot = $ReadOnly<{|
   /**
    * See note for this property on User.
    */
@@ -168,7 +192,7 @@ export type CrossRealmBot = {|
   // omitted later to reduce payload sizes. So, we're future-proofing this field
   // by making it optional. See comment on the same field in User.
   timezone?: string,
-|};
+|}>;
 
 /**
  * A Zulip user/account, which might be a cross-realm bot.
@@ -184,12 +208,12 @@ export type UserOrBot = User | CrossRealmBot;
  *
  * This feature is not related to group PMs.
  */
-export type UserGroup = {|
+export type UserGroup = $ReadOnly<{|
   description: string,
   id: number,
-  members: UserId[],
+  members: $ReadOnlyArray<UserId>,
   name: string,
-|};
+|}>;
 
 /**
  * Specifies user status related properties
@@ -199,19 +223,19 @@ export type UserGroup = {|
  * @prop status_text - a string representing information the user decided to
  *   manually set as their 'current status'
  */
-export type UserStatus = {|
+export type UserStatus = $ReadOnly<{|
   away?: true,
   status_text?: string,
-|};
+|}>;
 
-export type UserStatusMapObject = {|
+export type UserStatusMapObject = $ReadOnly<{|
   // TODO(flow): The key here is really UserId, not just any number; but
   //   this Flow bug:
   //     https://github.com/facebook/flow/issues/5407
   //   means that doesn't work right, and the best workaround is to
   //   leave it as `number`.
   [userId: number]: UserStatus,
-|};
+|}>;
 
 /** See ClientPresence, and the doc linked there. */
 export type PresenceStatus = 'active' | 'idle' | 'offline';
@@ -228,7 +252,7 @@ export type PresenceStatus = 'active' | 'idle' | 'offline';
  * @prop client
  * @prop pushable - Legacy; unused.
  */
-export type ClientPresence = {|
+export type ClientPresence = $ReadOnly<{|
   status: PresenceStatus,
   timestamp: number,
   client: string,
@@ -245,21 +269,29 @@ export type ClientPresence = {|
    * `aggregated`.  By writing `empty` we make it an error to actually use it.
    */
   pushable?: empty,
-|};
+|}>;
 
 /**
  * A user's presence status, including all information from all their clients.
  *
  * The `aggregated` property equals one of the others.  For details, see:
- *   https://zulip.com/api/get-presence
+ *   https://zulip.com/api/get-user-presence
  *
  * See also the app's `getAggregatedPresence`, which reimplements a version
  * of the logic to compute `aggregated`.
  */
-export type UserPresence = {|
+export type UserPresence = $ReadOnly<{|
   aggregated: ClientPresence,
   [client: string]: ClientPresence,
-|};
+|}>;
+
+/** This is what appears in the `muted_users` server event.
+ * See https://chat.zulip.org/api/get-events#muted_users for details.
+ */
+export type MutedUser = $ReadOnly<{|
+  id: UserId,
+  timestamp: number,
+|}>;
 
 //
 //
@@ -269,32 +301,37 @@ export type UserPresence = {|
 //
 //
 
-export type Stream = {|
+export type Stream = $ReadOnly<{|
   stream_id: number,
   description: string,
   name: string,
   invite_only: boolean,
   is_announcement_only: boolean,
   history_public_to_subscribers: boolean,
-|};
+|}>;
 
 export type Subscription = {|
-  ...$Exact<Stream>,
-  color: string,
-  in_home_view: boolean,
-  pin_to_top: boolean,
-  audible_notifications: boolean,
-  desktop_notifications: boolean,
-  email_address: string,
-  is_old_stream: boolean,
-  push_notifications: null | boolean,
-  stream_weekly_traffic: number,
+  ...$ReadOnly<$Exact<Stream>>,
+  +color: string,
+  +in_home_view: boolean,
+  +pin_to_top: boolean,
+  +email_address: string,
+  +is_old_stream: boolean,
+  +stream_weekly_traffic: number,
+
+  /** (To interpret this value, see `getIsNotificationEnabled`.) */
+  +push_notifications: null | boolean,
+
+  // To meaningfully interpret these, we'll need logic similar to that for
+  // `push_notifications`.  Pending that, the `-` ensures we don't read them.
+  -audible_notifications: boolean,
+  -desktop_notifications: boolean,
 |};
 
-export type Topic = {|
+export type Topic = $ReadOnly<{|
   name: string,
   max_id: number,
-|};
+|}>;
 
 //
 //
@@ -369,7 +406,7 @@ export type Reaction = $ReadOnly<{|
    *
    * The format varies with `reaction_type`, and can be subtle.
    * See the comment on Reaction.emoji_code here:
-   *   https://github.com/zulip/zulip/blob/master/zerver/models.py
+   *   https://github.com/zulip/zulip/blob/main/zerver/models.py
    */
   emoji_code: string,
 |}>;
@@ -425,6 +462,47 @@ export type PmRecipientUser = $ReadOnly<{|
 |}>;
 
 /**
+ * The data encoded in a submessage to make the message a widget.
+ *
+ * Note that future server versions might introduce new types of widgets, so
+ * `widget_type` could be a value not included here.  But when it is one of
+ * these values, the rest of the object will follow this type.
+ */
+// Ideally we'd be able to express both the known and the unknown widget
+// types: we'd have another branch of this union which looked like
+//   | {| +widget_type: (string *other than* those above), +extra_data?: { ... } |}
+// But there doesn't seem to be a way to express that in Flow.
+export type WidgetData =
+  | {|
+      +widget_type: 'poll',
+      +extra_data?: {| +question?: string, +options?: $ReadOnlyArray<string> |},
+    |}
+  // We can write these down more specifically when we implement these widgets.
+  | {| +widget_type: 'todo', +extra_data?: { ... } |}
+  | {| +widget_type: 'zform', +extra_data?: { ... } |};
+
+/**
+ * The data encoded in a submessage that acts on a widget.
+ *
+ * The interpretation of this data, including the meaning of the `type`
+ * field, is specific to each widget type.
+ *
+ * We delegate actually processing these to shared code, so we don't specify
+ * the details further.
+ */
+export type WidgetEventData = { +type: string, ... };
+
+/**
+ * The data encoded in a `Submessage`.
+ *
+ * For widgets (the only existing use of submessages), the submessages array
+ * consists of:
+ *  * One submessage with `WidgetData`; then
+ *  * Zero or more submessages with `WidgetEventData`.
+ */
+export type SubmessageData = WidgetData | WidgetEventData;
+
+/**
  * Submessages are items containing extra data that can be added to a
  * message. Despite what their name might suggest, they are not a subtype
  * of the `Message` type, nor do they share almost any fields with it.
@@ -441,52 +519,16 @@ export type Submessage = $ReadOnly<{|
   message_id: number,
   sender_id: UserId,
   msg_type: 'widget', // only this type is currently available
-  content: string, // JSON string
+
+  /** A `SubmessageData` object, JSON-encoded. */
+  content: string,
 |}>;
 
 /**
- * A Zulip message.
- *
- * This type is mainly intended to represent the data the server sends as
- * the `message` property of an event of type `message`.  Caveat lector: we
- * pass these around to a lot of places, and do a lot of further munging, so
- * this type may not quite represent that.  Any differences should
- * definitely be commented, and perhaps refactored.
- *
- * The server's behavior here is undocumented and the source is very
- * complex; this is naturally a place where a large fraction of all the
- * features of Zulip have to appear.
- *
- * Major appearances of this type include
- *  * `message: Message` on a server event of type `message`, and our
- *    `EVENT_NEW_MESSAGE` Redux action for the event;
- *  * `messages: Message[]` in a `/messages` (our `getMessages`) response,
- *    and our resulting `MESSAGE_FETCH_COMPLETE` Redux action;
- *  * `messages: {| [id]: Message |}` in our global Redux state.
- *
- * References include:
- *  * the two example events at https://zulip.com/api/get-events-from-queue
- *  * `process_message_event` in zerver/tornado/event_queue.py; the call
- *    `client.add_event(user_event)` makes the final determination of what
- *    goes into the event, so `message_dict` is the final value of `message`
- *  * `MessageDict.wide_dict` and its helpers in zerver/lib/message.py;
- *    via `do_send_messages` in `zerver/lib/actions.py`, these supply most
- *    of the data ultimately handled by `process_message_event`
- *  * `messages_for_ids` and its helpers in zerver/lib/message.py; via
- *    `get_messages_backend`, these supply the data ultimately returned by
- *    `/messages`
- *  * the `Message` and `AbstractMessage` models in zerver/models.py, but
- *    with caution; many fields are adjusted between the DB row and the event
- *  * empirical study looking at Redux events logged [to the
- *    console](docs/howto/debugging.md).
- *
- * See also `Outbox`, which is deliberately similar so that we can use
- * the type `Message | Outbox` in many places.
- *
- * See also `MessagesState` for discussion of how we fetch and store message
- * data.
+ * Properties in common among the two different flavors of a
+ * `Message`: `PmMessage` and `StreamMessage`.
  */
-export type Message = $ReadOnly<{|
+type MessageBase = $ReadOnly<{|
   /** Our own flag; if true, really type `Outbox`. */
   isOutbox: false,
 
@@ -544,10 +586,14 @@ export type Message = $ReadOnly<{|
 
   timestamp: number,
 
-  //
-  // Properties that behave differently for stream vs. private messages.
+  /** Deprecated; a server implementation detail not useful in a client. */
+  // recipient_id: number,
+|}>;
 
-  type: 'stream' | 'private',
+export type PmMessage = $ReadOnly<{|
+  ...MessageBase,
+
+  type: 'private',
 
   // Notes from studying the server code:
   //  * Notes are primarily from the server as of 2020-04 at cb85763c7, but
@@ -567,26 +613,94 @@ export type Message = $ReadOnly<{|
   //      it sorted by user ID; so, best not to assume current behavior.
   //
   /**
-   * The set of all users in the thread, for a PM; else the stream name.
+   * The set of all users in the thread.
    *
-   * For a private message, this lists the sender as well as all (other)
-   * recipients, and it lists each user just once.  In particular the
-   * self-user is always included.
+   * This lists the sender as well as all (other) recipients, and it
+   * lists each user just once.  In particular the self-user is always
+   * included.
    *
    * The ordering is less well specified; if it matters, sort first.
-   *
-   * For stream messages, prefer `stream_id`; see #3918.
    */
-  display_recipient: string | $ReadOnlyArray<PmRecipientUser>, // `string` for type stream, else PmRecipientUser[]
+  display_recipient: $ReadOnlyArray<PmRecipientUser>,
 
-  /** Deprecated; a server implementation detail not useful in a client. */
-  recipient_id: number,
+  /**
+   * PMs have (as far as we know) always had the empty string at this
+   * field. Though the doc warns that this might change if Zulip adds
+   * support for topics in PMs; see
+   *   https://chat.zulip.org/#narrow/stream/19-documentation/topic/.60subject.60.20on.20messages/near/1125819.
+   */
+  subject: '',
+|}>;
 
-  stream_id: number, // FixMe: actually only for type `stream`, else absent.
+export type StreamMessage = $ReadOnly<{|
+  ...MessageBase,
 
+  type: 'stream',
+
+  /**
+   * The stream name.
+   *
+   * Prefer `stream_id`; see #3918.
+   */
+  display_recipient: string,
+
+  stream_id: number,
+
+  /**
+   * The topic.
+   *
+   * No stream message can be stored (and thus arrive on our doorstep)
+   * with an empty-string subject:
+   *   https://chat.zulip.org/#narrow/stream/19-documentation/topic/.60orig_subject.60.20in.20.60update_message.60.20events/near/1112709
+   * (see point 4). We assume this has always been the case.
+   */
   subject: string,
   subject_links: $ReadOnlyArray<string>,
 |}>;
+
+/**
+ * A Zulip message.
+ *
+ * This type is mainly intended to represent the data the server sends as
+ * the `message` property of an event of type `message`.  Caveat lector: we
+ * pass these around to a lot of places, and do a lot of further munging, so
+ * this type may not quite represent that.  Any differences should
+ * definitely be commented, and perhaps refactored.
+ *
+ * The server's behavior here is undocumented and the source is very
+ * complex; this is naturally a place where a large fraction of all the
+ * features of Zulip have to appear.
+ *
+ * Major appearances of this type include
+ *  * `message: Message` on a server event of type `message`, and our
+ *    `EVENT_NEW_MESSAGE` Redux action for the event;
+ *  * `messages: Message[]` in a `/messages` (our `getMessages`) response,
+ *    and our resulting `MESSAGE_FETCH_COMPLETE` Redux action;
+ *  * `messages: Map<number, Message>` in our global Redux state.
+ *
+ * References include:
+ *  * the two example events at https://zulip.com/api/get-events
+ *  * `process_message_event` in zerver/tornado/event_queue.py; the call
+ *    `client.add_event(user_event)` makes the final determination of what
+ *    goes into the event, so `message_dict` is the final value of `message`
+ *  * `MessageDict.wide_dict` and its helpers in zerver/lib/message.py;
+ *    via `do_send_messages` in `zerver/lib/actions.py`, these supply most
+ *    of the data ultimately handled by `process_message_event`
+ *  * `messages_for_ids` and its helpers in zerver/lib/message.py; via
+ *    `get_messages_backend`, these supply the data ultimately returned by
+ *    `/messages`
+ *  * the `Message` and `AbstractMessage` models in zerver/models.py, but
+ *    with caution; many fields are adjusted between the DB row and the event
+ *  * empirical study looking at Redux events logged [to the
+ *    console](docs/howto/debugging.md).
+ *
+ * See also `Outbox`, which is deliberately similar so that we can use
+ * the type `Message | Outbox` in many places.
+ *
+ * See also `MessagesState` for discussion of how we fetch and store message
+ * data.
+ */
+export type Message = PmMessage | StreamMessage;
 
 //
 //
@@ -607,9 +721,9 @@ export type Message = $ReadOnly<{|
  * as [], which is unlike the behaviour found in some other parts of the
  * codebase.
  */
-export type RecentPrivateConversation = {|
+export type RecentPrivateConversation = $ReadOnly<{|
   max_message_id: number,
   // When received from the server, these are guaranteed to be sorted only after
   // 2.2-dev-53-g405a529340. To be safe, we always sort them on receipt.
-  user_ids: UserId[],
-|};
+  user_ids: $ReadOnlyArray<UserId>,
+|}>;

@@ -1,16 +1,13 @@
 /* @flow strict-local */
 
 import React, { PureComponent } from 'react';
+import type { Node } from 'react';
 import { View } from 'react-native';
-import { ActionSheetProvider } from '@expo/react-native-action-sheet';
 
-import type { Message } from '../types';
+import type { Message, Narrow } from '../types';
 import { createStyleSheet } from '../styles';
 import { LoadingIndicator, SearchEmptyState } from '../common';
-import { HOME_NARROW } from '../utils/narrow';
 import MessageList from '../webview/MessageList';
-import getHtmlPieceDescriptors from '../message/getHtmlPieceDescriptors';
-import { NULL_ARRAY } from '../nullObjects';
 
 const styles = createStyleSheet({
   results: {
@@ -20,13 +17,12 @@ const styles = createStyleSheet({
 
 type Props = $ReadOnly<{|
   messages: Message[] | null,
+  narrow: Narrow,
   isFetching: boolean,
 |}>;
 
 export default class SearchMessagesCard extends PureComponent<Props> {
-  static NOT_FETCHING = { older: false, newer: false };
-
-  render() {
+  render(): Node {
     const { isFetching, messages } = this.props;
 
     if (isFetching) {
@@ -45,21 +41,21 @@ export default class SearchMessagesCard extends PureComponent<Props> {
       return <SearchEmptyState text="No results" />;
     }
 
-    const htmlPieceDescriptors = getHtmlPieceDescriptors(messages, HOME_NARROW);
-
     return (
       <View style={styles.results}>
-        <ActionSheetProvider>
-          <MessageList
-            initialScrollMessageId={messages[0].id}
-            messages={messages}
-            narrow={HOME_NARROW}
-            htmlPieceDescriptorsForShownMessages={htmlPieceDescriptors}
-            fetching={SearchMessagesCard.NOT_FETCHING}
-            showMessagePlaceholders={false}
-            typingUsers={NULL_ARRAY}
-          />
-        </ActionSheetProvider>
+        <MessageList
+          initialScrollMessageId={
+            // This access is OK only because of the `.length === 0` check
+            // above.
+            messages[messages.length - 1].id
+          }
+          messages={messages}
+          narrow={this.props.narrow}
+          showMessagePlaceholders={false}
+          // TODO: handle editing a message from the search results,
+          // or make this prop optional
+          startEditMessage={() => undefined}
+        />
       </View>
     );
   }

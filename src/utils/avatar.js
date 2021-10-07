@@ -1,11 +1,21 @@
 /* @flow strict-local */
 /* eslint-disable no-underscore-dangle */
 /* eslint-disable no-use-before-define */
+// $FlowFixMe[untyped-import]
 import md5 from 'blueimp-md5';
 
 import * as logging from './logging';
 import { ensureUnreachable, type UserId } from '../types';
 import { isUrlAbsolute, isUrlPathAbsolute } from './url';
+
+/**
+ * Pixel dimensions of different size choices we have (they're all
+ * square) when requesting an uploaded avatar.
+ */
+// DEFAULT_AVATAR_SIZE in zerver/lib/upload.py.
+export const DEFAULT_UPLOAD_SIZE_PX = 100;
+// MEDIUM_AVATAR_SIZE in zerver/lib/upload.py.
+export const MEDIUM_UPLOAD_SIZE_PX = 500;
 
 /**
  * A way to get a standard avatar URL, or a sized one if available
@@ -29,7 +39,7 @@ export class AvatarURL {
       // discretion, if we announce the
       // `user_avatar_url_field_optional` client capability, which we
       // do. See the note about `user_avatar_url_field_optional` at
-      // https://zulipchat.com/api/register-queue.
+      // https://zulip.com/api/register-queue.
       //
       // It will also be absent on cross-realm bots from servers prior
       // to 58ee3fa8c (1.9.0). The effect of using FallbackAvatarURL for
@@ -154,7 +164,7 @@ export class GravatarURL extends AvatarURL {
     }
   }
 
-  static ORIGIN = 'https://secure.gravatar.com';
+  static ORIGIN: string = 'https://secure.gravatar.com';
 
   /**
    * Standard URL from which to generate others. PRIVATE.
@@ -207,12 +217,15 @@ export class GravatarURL extends AvatarURL {
  * The /avatar/{user_id} redirect.
  *
  * See the point on `user_avatar_url_field_optional` at
- * https://zulipchat.com/api/register-queue.
+ * https://zulip.com/api/register-queue.
  *
  * Note that this endpoint needs authentication; we should send the
  * auth headers (see src/api/transport) with the request.
  *
- * This endpoint does not currently support size customization.
+ * This endpoint isn't known to support size customization if the
+ * image at the redirect is a Gravatar image, but does support
+ * default/medium sizing if it's an uploaded image (see note on
+ * `UploadedAvatarURL`).
  */
 export class FallbackAvatarURL extends AvatarURL {
   /**
@@ -271,11 +284,10 @@ export class FallbackAvatarURL extends AvatarURL {
   /**
    * Get a URL object for the given size.
    *
-   * Size customization isn't currently supported for
-   * FallbackAvatarURLs.
-   *
-   * Still, we'll take `sizePhysicalPx` (it should be an integer), to
-   * make it easy to support in the future.
+   * Not known to support size customization if the image at the
+   * redirect is a Gravatar image, but does support default/medium
+   * sizing if it's an uploaded image (see note on
+   * `UploadedAvatarURL`).
    */
   get(sizePhysicalPx: number): URL {
     // `this._standardUrl` may have begun its life as a string, to
@@ -284,7 +296,18 @@ export class FallbackAvatarURL extends AvatarURL {
       this._standardUrl = new URL(this._standardUrl);
     }
 
-    return this._standardUrl;
+    let result: URL = this._standardUrl;
+    if (sizePhysicalPx > DEFAULT_UPLOAD_SIZE_PX) {
+      /* $FlowFixMe[incompatible-call]: Make a new URL to mutate,
+         instead of mutating this._standardUrl
+         https://github.com/zulip/zulip-mobile/pull/4230#discussion_r512351202
+         */
+      result = new URL(this._standardUrl);
+
+      result.pathname += '/medium';
+    }
+
+    return result;
   }
 }
 
@@ -292,9 +315,9 @@ export class FallbackAvatarURL extends AvatarURL {
  * An avatar that was uploaded to the Zulip server.
  *
  * There are two size options; if `sizePhysicalPx` is greater than
- * 100, medium is chosen:
- *  * default: 100x100
- *  * medium: 500x500
+ * DEFAULT_UPLOAD_SIZE_PX, medium is chosen:
+ *  * default: DEFAULT_UPLOAD_SIZE_PX square
+ *  * medium: MEDIUM_UPLOAD_SIZE_PX square
  *
  * Don't send auth headers with requests to this type of avatar URL.
  * The s3 backend doesn't want them; it gives a 400 with an
@@ -382,17 +405,19 @@ export class UploadedAvatarURL extends AvatarURL {
     }
 
     let result: URL = this._standardUrl;
-    if (sizePhysicalPx > 100) {
+    if (sizePhysicalPx > DEFAULT_UPLOAD_SIZE_PX) {
       /* $FlowFixMe[incompatible-call]: Make a new URL to mutate,
          instead of mutating this._standardUrl
          https://github.com/zulip/zulip-mobile/pull/4230#discussion_r512351202
          */
       result = new URL(this._standardUrl);
 
-      const match = new RegExp(/(\w+)\.png/g).exec(result.pathname);
-      if (match !== null) {
-        result.pathname = result.pathname.replace(match[0], `${match[1]}-medium.png`);
-      }
+      result.pathname = result.pathname.replace(
+        // `.png` is optional: s3 uploads don't use it, local ones do.
+        // See TODO in zulip/zulip@c03615b98.
+        /(?:\.png)?$/,
+        '-medium.png',
+      );
     }
     return result;
   }

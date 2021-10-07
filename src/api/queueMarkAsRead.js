@@ -3,21 +3,21 @@ import type { Auth } from './transportTypes';
 import messagesFlags from './messages/messagesFlags';
 
 /** We batch up requests to avoid sending them twice in this much time. */
-const debouncePeriodMs = 2000;
+const debouncePeriodMs = 500;
 
-let unsentMessageIds = [];
+let unackedMessageIds = [];
 let lastSentTime = -Infinity;
 let timeout = null;
 
 /** Private; exported only for tests. */
 export const resetAll = () => {
-  unsentMessageIds = [];
+  unackedMessageIds = [];
   lastSentTime = -Infinity;
   timeout = null;
 };
 
-const processQueue = (auth: Auth) => {
-  if (timeout !== null) {
+const processQueue = async (auth: Auth) => {
+  if (timeout !== null || unackedMessageIds.length === 0) {
     return;
   }
 
@@ -30,12 +30,13 @@ const processQueue = (auth: Auth) => {
     return;
   }
 
-  messagesFlags(auth, unsentMessageIds, 'add', 'read');
-  unsentMessageIds = [];
   lastSentTime = Date.now();
+  const response = await messagesFlags(auth, unackedMessageIds, 'add', 'read');
+  const acked_messages = new Set(response.messages);
+  unackedMessageIds = unackedMessageIds.filter(id => !acked_messages.has(id));
 };
 
 export default (auth: Auth, messageIds: number[]): void => {
-  unsentMessageIds.push(...messageIds);
+  unackedMessageIds.push(...messageIds);
   processQueue(auth);
 };

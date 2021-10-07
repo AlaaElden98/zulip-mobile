@@ -49,7 +49,7 @@ few different forms in different contexts in our code:
   then:
   * If using `_`, use the following form: `_('Hello, {name}', { name })`.
     Translators will translate the constant string `'Hello, {name}'`,
-    including the placeholder.
+    leaving the placeholder unchanged: `'Hola, {name}'`.
   * If passing to something that accepts `LocalizableText`, then use
     the same placeholder syntax in the message string, and see the
     `LocalizableText` type definition for where to put the message
@@ -82,16 +82,25 @@ few different forms in different contexts in our code:
 Important general background on providing strings for translation:
 
 * Never try to concatenate translated strings together, or do other
-  string manipulation on them.  Instead, all punctuation, sentence
-  structure, etc., should appear inside the constant message string.
-  To interpolate data that can vary, use the placeholder syntax
-  `'Hello, {name}'`.
+  string manipulation on them, in order to put things together in a
+  sentence.  Instead, all punctuation, sentence structure, etc.,
+  should appear inside the constant message string.  To interpolate
+  data that can vary, use the placeholder syntax `'Hello, {name}'`.
 
   This is important because different languages will put things in
   different orders in a sentence, and use different punctuation and
   spacing.
 
-  For further discussion, see [general Zulip docs on
+  The only situations where concatenating or interpolating translated
+  strings is appropriate are where the strings aren't meant to be read
+  as part of the same sentence, which usually means they're in
+  separate elements of the UI.  This is rare; in most situations,
+  separate elements of the UI will either be in separate React
+  elements, or in HTML where we use structured templates to ensure
+  that text data is always correctly encoded as HTML, so either way we
+  won't be concatenating their text directly together.
+
+  For further discussion and examples, see [general Zulip docs on
   internationalization][rtd-i18n].
 
 [react-intl-formatmessage]: https://formatjs.io/docs/react-intl/api/#formatmessage
@@ -107,38 +116,47 @@ mobile app, i.e. people who merge PRs into it.  For everyone else, see
 the sections above.
 
 
-### Setup
+### When to sync
 
-You'll want Transifex's CLI client, `tx`.
+It's important to sync with Transifex on two kinds of occasions:
 
-* Install in your homedir with `pip3 install --user transifex-client`.  Or
-  you can use your Zulip dev server virtualenv, which has it.
+* Just before making a release.  This way the release gets the latest
+  translations people have contributed.
 
-* Configure a `.transifexrc` with your API token.  See [upstream
-  instructions](https://docs.transifex.com/client/client-configuration#transifexrc).
+  * An exception is that because we don't sync with Transifex on side
+    branches, we don't do so for cherry-pick releases.
 
-  This can go either in your homedir, or in your working tree to make
-  the configuration apply only locally; it's already ignored in our
-  `.gitignore`.
+* Just after merging a PR that adds a new string to translate, or
+  otherwise edits `static/translations/messages_en.json`.  This makes
+  the new string available for our translation contributors to
+  translate, so that by the time we make a release with the change, we
+  may already have translations for many languages.
 
-* You'll need to be added [as a "maintainer"][tx-zulip-maintainers] to
-  the Zulip project on Transifex.  (Upstream [recommends
-  this][tx-docs-maintainers] as the set of permissions on a Transifex
-  project needed for interacting with it as a developer.)
-
-[tx-zulip-maintainers]: https://www.transifex.com/zulip/zulip/settings/maintainers/
-[tx-docs-maintainers]: https://docs.transifex.com/teams/understanding-user-roles#project-maintainers
+It's fine to also do it at any other time, too.
 
 
-### Regular operation
+### How to sync
 
-To sync with Transifex, run `tools/tx-sync`.
+(First, if you haven't already, see the "One-time setup" section below.)
 
-This syncs in both directions, and makes local commits with any
-changes.  Review the results and then push to the central repo.
+To sync with Transifex, run `tools/tx-sync`, and then `git push` the
+resulting commit(s) to the central repo.
 
-The sync uploads from `static/translations/messages_en.json` to the
-set of strings Transifex shows for contributors to translate, and
+When syncing, always start from the latest development version, not an old
+version or a side branch.  This way the strings we have in Transifex reflect
+the latest development version, and don't get changed back and forth to a
+set of strings from an old or unmerged version.
+
+Do push the script's automated commits directly, without a PR; if you
+make by hand some more-interesting changes that call for code review,
+send those separately.  This process is effectively syncing state
+between the central repo and Transifex, and ideally that's done
+synchronously.  (Don't worry much about it, though: if you run
+`tools/tx-sync` and don't push, the practical effect is that the next
+`tools/tx-sync` may produce a messier diff.)
+
+The `tools/tx-sync` script uploads from `static/translations/messages_en.json`
+to the set of strings Transifex shows for contributors to translate, and
 downloads translations to files `static/translations/messages_*.json`.
 (See `.tx/config` for how those paths are configured.)
 
@@ -185,3 +203,31 @@ absent, to significantly translated, update the list in
 `src/settings/languages.js` to include it.  See there for details on
 what counts as "significantly translated", and for an easy way to
 check.
+
+This will also mean making an edit back in
+`static/translations/messages_en.json` -- the name of the new language is
+itself a string that appears in the UI, and so it's itself a string we want
+to provide to our translators to translate.
+
+
+### One-time setup
+
+You'll want Transifex's CLI client, `tx`.
+
+* Install in your homedir with `pip3 install --user transifex-client`.  Or
+  you can use your Zulip dev server virtualenv, which has it.
+
+* Configure a `.transifexrc` with your API token.  See [upstream
+  instructions](https://docs.transifex.com/client/client-configuration#transifexrc).
+
+  This can go either in your homedir, or in your working tree to make
+  the configuration apply only locally; it's already ignored in our
+  `.gitignore`.
+
+* You'll need to be added [as a "maintainer"][tx-zulip-maintainers] to
+  the Zulip project on Transifex.  (Upstream [recommends
+  this][tx-docs-maintainers] as the set of permissions on a Transifex
+  project needed for interacting with it as a developer.)
+
+[tx-zulip-maintainers]: https://www.transifex.com/zulip/zulip/settings/maintainers/
+[tx-docs-maintainers]: https://docs.transifex.com/teams/understanding-user-roles#project-maintainers

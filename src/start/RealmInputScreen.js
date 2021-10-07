@@ -1,29 +1,20 @@
 /* @flow strict-local */
 import React, { PureComponent } from 'react';
+import type { Node } from 'react';
 import { Keyboard } from 'react-native';
 
 import type { RouteProp } from '../react-navigation';
 import type { AppNavigationProp } from '../nav/AppNavigator';
 import * as NavigationService from '../nav/NavigationService';
-import { ZulipVersion } from '../utils/zulipVersion';
-import type { Dispatch } from '../types';
 import type { ApiResponseServerSettings } from '../api/settings/getServerSettings';
-import { connect } from '../react-redux';
 import { ErrorMsg, Label, SmartUrlInput, Screen, ZulipButton } from '../common';
 import { tryParseUrl } from '../utils/url';
 import * as api from '../api';
-import { realmAdd, navigateToAuth } from '../actions';
-
-type SelectorProps = {|
-  +initialRealmInputValue: string,
-|};
+import { navigateToAuth } from '../actions';
 
 type Props = $ReadOnly<{|
   navigation: AppNavigationProp<'realm-input'>,
-  route: RouteProp<'realm-input', {| realm: URL | void, initial: boolean | void |}>,
-
-  dispatch: Dispatch,
-  ...SelectorProps,
+  route: RouteProp<'realm-input', {| initial: boolean | void |}>,
 |}>;
 
 type State = {|
@@ -32,14 +23,14 @@ type State = {|
   progress: boolean,
 |};
 
-class RealmInputScreen extends PureComponent<Props, State> {
-  state = {
+export default class RealmInputScreen extends PureComponent<Props, State> {
+  state: State = {
     progress: false,
-    realmInputValue: this.props.initialRealmInputValue,
+    realmInputValue: '',
     error: null,
   };
 
-  tryRealm = async () => {
+  tryRealm: () => Promise<void> = async () => {
     const { realmInputValue } = this.state;
 
     const parsedRealm = tryParseUrl(realmInputValue);
@@ -52,20 +43,12 @@ class RealmInputScreen extends PureComponent<Props, State> {
       return;
     }
 
-    const { dispatch } = this.props;
     this.setState({
       progress: true,
       error: null,
     });
     try {
       const serverSettings: ApiResponseServerSettings = await api.getServerSettings(parsedRealm);
-      dispatch(
-        realmAdd(
-          parsedRealm,
-          serverSettings.zulip_feature_level ?? 0,
-          new ZulipVersion(serverSettings.zulip_version),
-        ),
-      );
       NavigationService.dispatch(navigateToAuth(serverSettings));
       Keyboard.dismiss();
     } catch (err) {
@@ -78,17 +61,10 @@ class RealmInputScreen extends PureComponent<Props, State> {
     }
   };
 
-  handleRealmChange = (value: string) => this.setState({ realmInputValue: value });
+  handleRealmChange: string => void = value => this.setState({ realmInputValue: value });
 
-  componentDidMount() {
-    const { initialRealmInputValue } = this.props;
-    if (initialRealmInputValue && initialRealmInputValue.length > 0) {
-      this.tryRealm();
-    }
-  }
-
-  render() {
-    const { initialRealmInputValue, navigation } = this.props;
+  render(): Node {
+    const { navigation } = this.props;
     const { progress, error, realmInputValue } = this.state;
 
     const styles = {
@@ -113,7 +89,6 @@ class RealmInputScreen extends PureComponent<Props, State> {
           defaultProtocol="https://"
           defaultOrganization="your-org"
           defaultDomain="zulipchat.com"
-          defaultValue={initialRealmInputValue}
           onChangeText={this.handleRealmChange}
           onSubmitEditing={this.tryRealm}
           enablesReturnKeyAutomatically
@@ -134,7 +109,3 @@ class RealmInputScreen extends PureComponent<Props, State> {
     );
   }
 }
-
-export default connect<SelectorProps, _, _>((state, props) => ({
-  initialRealmInputValue: props.route.params.realm?.toString() ?? '',
-}))(RealmInputScreen);

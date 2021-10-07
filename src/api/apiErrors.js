@@ -1,12 +1,53 @@
 /* @flow strict-local */
 import type { ApiErrorCode, ApiResponseErrorData } from './transportTypes';
-import * as logging from '../utils/logging';
 
-/** Runtime class of custom API error types. */
-export class ApiError extends Error {
-  code: ApiErrorCode;
-  data: $ReadOnly<{ ... }>;
-  httpStatus: number;
+/**
+ * Some kind of error from a Zulip API network request.
+ *
+ * See subclasses: {@link ApiError}, {@link NetworkError}, {@link ServerError}.
+ */
+export class RequestError extends Error {
+  /** The HTTP status code in the response, if any. */
+  +httpStatus: number | void;
+
+  /**
+   * The JSON-decoded response body.
+   *
+   * In the subclass {@link ApiError}, this is a bit narrower; see there.
+   *
+   * If there was no HTTP response or no body, or the body was not parseable
+   * as JSON, this value is `undefined`.
+   */
+  +data: mixed;
+}
+
+/**
+ * An error returned by the Zulip server API.
+ *
+ * This always represents a situation where the server said there was a
+ * client-side error in the request, giving a 4xx HTTP status code, and
+ * moreover sent a well-formed Zulip API error blob in the response.
+ *
+ * The error blob's contents are represented as follows:
+ *  * `result`: Always 'error', if we have an `ApiError` at all.
+ *  * `code`: This object's `.code`.
+ *  * `msg`: This object's `.message` (which the type inherits from`Error`).
+ *  * All other properties: This object's `.data`.
+ *
+ * See API docs: https://zulip.com/api/rest-error-handling
+ */
+export class ApiError extends RequestError {
+  +code: ApiErrorCode;
+
+  +httpStatus: number;
+
+  /**
+   * This error's data, if any, beyond the properties common to all errors.
+   *
+   * This consists of the properties in the (JSON-decoded) response other
+   * than `result`, `code`, and `msg`.
+   */
+  +data: $ReadOnly<{ ... }>;
 
   constructor(httpStatus: number, data: $ReadOnly<ApiResponseErrorData>) {
     // eslint-disable-next-line no-unused-vars
@@ -19,50 +60,103 @@ export class ApiError extends Error {
 }
 
 /**
- * Given a server response (allegedly) denoting an error, produce an Error to be
- * thrown.
- *
- * If the `data` argument is actually of the form expected from the server, the
- * returned error will be an {@link ApiError}; otherwise it will be a generic
- * Error.
+ * A network-level error that prevented even getting an HTTP response.
  */
-export const makeErrorFromApi = (httpStatus: number, data: mixed): Error => {
-  // Validate `data`, and construct the resultant error object.
-  if (typeof data === 'object' && data !== null) {
-    const { result, msg, code } = data;
-    if (result === 'error' && typeof msg === 'string') {
-      // If `code` is present, it must be a string.
-      if (code === undefined || typeof code === 'string') {
-        // Default to 'BAD_REQUEST' if `code` is not present.
-        return new ApiError(httpStatus, {
-          ...data,
-          result,
-          msg,
-          code: code ?? 'BAD_REQUEST',
-        });
-      }
-    }
-  }
-
-  // HTTP 5xx errors aren't generally expected to come with JSON data.
-  if (httpStatus >= 500 && httpStatus <= 599) {
-    return new Error(`Network request failed: HTTP error ${httpStatus}`);
-  }
-
-  // Server has responded, but the response is not a valid error-object.
-  // (This should never happen, even on old versions of the Zulip server.)
-  logging.warn(`Bad response from server: ${JSON.stringify(data) ?? 'undefined'}`);
-  return new Error('Server responded with invalid message');
-};
+export class NetworkError extends RequestError {}
 
 /**
- * Is exception caused by a Client Error (4xx)?
+ * Some kind of server-side error in handling the request.
  *
- * Client errors are often caused by incorrect parameters given to the backend
- * by the client application.
- *
- * A notable difference between a Server (5xx) and Client (4xx) errors is that
- * a client error will not be resolved by waiting and retrying the same request.
+ * This should always represent either some kind of operational issue on the
+ * server, or a bug in the server where its responses don't agree with the
+ * documented API.
  */
-export const isClientError = (e: Error): boolean =>
-  e instanceof ApiError && e.httpStatus >= 400 && e.httpStatus <= 499;
+export class ServerError extends RequestError {
+  +httpStatus: number;
+
+  constructor(msg: string, httpStatus: number) {
+    super(msg);
+    this.httpStatus = httpStatus;
+  }
+}
+
+/**
+ * A server error, acknowledged by the server via a 5xx HTTP status code.
+ */
+export class Server5xxError extends ServerError {
+  constructor(httpStatus: number) {
+    // This text is looked for by the `ignoreErrors` we pass to `Sentry.init`.
+    // If changing this text, update the pattern there to match it.
+    super(`Network request failed: HTTP status ${httpStatus}`, httpStatus);
+  }
+}
+
+/**
+ * An error where the server's response doesn't match the general Zulip API.
+ *
+ * This means the server's response didn't contain appropriately-shaped JSON
+ * as documented at the page https://zulip.com/api/rest-error-handling .
+ */
+export class MalformedResponseError extends ServerError {
+  constructor(httpStatus: number, data: mixed) {
+    super(`Server responded with invalid message; HTTP status ${httpStatus}`, httpStatus);
+    this.data = data;
+  }
+}
+
+/**
+ * An error where the server gave an HTTP status it should never give.
+ *
+ * That is, the HTTP status wasn't one that the docs say the server may
+ * give: https://zulip.com/api/rest-error-handling
+ */
+export class UnexpectedHttpStatusError extends ServerError {
+  constructor(httpStatus: number, data: mixed) {
+    super(`Server gave unexpected HTTP status: ${httpStatus}`, httpStatus);
+    this.data = data;
+  }
+}
+
+/**
+ * Return the data on success; otherwise, throw a nice {@link RequestError}.
+ */
+// For the spec this is implementing, see:
+//   https://zulip.com/api/rest-error-handling
+export const interpretApiResponse = (httpStatus: number, data: mixed): mixed => {
+  if (httpStatus >= 200 && httpStatus <= 299) {
+    // Status code says success…
+
+    if (data === undefined) {
+      // … but response couldn't be parsed as JSON.  Seems like a server bug.
+      throw new MalformedResponseError(httpStatus, data);
+    }
+
+    // … and we got a JSON response, too.  So we can return the data.
+    return data;
+  }
+
+  if (httpStatus >= 500 && httpStatus <= 599) {
+    // Server error.  Ignore `data`; it's unlikely to be a well-formed Zulip
+    // API error blob, and its meaning is undefined if it somehow is.
+    throw new Server5xxError(httpStatus);
+  }
+
+  if (httpStatus >= 400 && httpStatus <= 499) {
+    // Client error.  We should have a Zulip API error blob.
+
+    if (typeof data === 'object' && data !== null) {
+      const { result, msg, code = 'BAD_REQUEST' } = data;
+      if (result === 'error' && typeof msg === 'string' && typeof code === 'string') {
+        // Hooray, we have a well-formed Zulip API error blob.  Use that.
+        throw new ApiError(httpStatus, { ...data, result, msg, code });
+      }
+    }
+
+    // No such luck.  Seems like a server bug, then.
+    throw new MalformedResponseError(httpStatus, data);
+  }
+
+  // HTTP status was none of 2xx, 4xx, or 5xx.  That's a server bug --
+  // the API says that shouldn't happen.
+  throw new UnexpectedHttpStatusError(httpStatus, data);
+};

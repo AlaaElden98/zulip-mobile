@@ -2,7 +2,7 @@
 import invariant from 'invariant';
 import { createSelector } from 'reselect';
 
-import type { GlobalState, Message, PmConversationData, Selector } from '../types';
+import type { PerAccountState, PmMessage, PmConversationData, Selector } from '../types';
 import { getPrivateMessages } from '../message/messageSelectors';
 import { getAllUsersById, getOwnUserId } from '../users/userSelectors';
 import { getUnreadByPms, getUnreadByHuddles } from '../unread/unreadSelectors';
@@ -37,7 +37,7 @@ export const getRecentConversationsLegacy: Selector<PmConversationData[]> = crea
   getAllUsersById,
   (
     ownUserId,
-    messages: Message[],
+    messages: PmMessage[],
     unreadPms: {| [number]: number |},
     unreadHuddles: {| [string]: number |},
     allUsersById,
@@ -104,7 +104,10 @@ function getRecentConversationsModernImpl(
         return null;
       }
 
-      const unreadsKey = pmUnreadsKeyFromPmKeyIds(keyRecipients.map(r => r.user_id), ownUserId);
+      const unreadsKey = pmUnreadsKeyFromPmKeyIds(
+        keyRecipients.map(r => r.user_id),
+        ownUserId,
+      );
 
       const msgId = map.get(recentsKey);
       invariant(msgId !== undefined, 'pm-conversations: key in sorted should be in map');
@@ -125,10 +128,11 @@ const getServerIsOld: Selector<boolean> = createSelector(
 /**
  * The most recent PM conversations, with unread count and latest message ID.
  */
-export const getRecentConversations = (state: GlobalState): PmConversationData[] =>
+export const getRecentConversations = (state: PerAccountState): PmConversationData[] =>
   getServerIsOld(state) ? getRecentConversationsLegacy(state) : getRecentConversationsModern(state);
 
-export const getUnreadConversations: Selector<PmConversationData[]> = createSelector(
-  getRecentConversations,
-  conversations => conversations.filter(c => c.unread > 0),
+export const getUnreadConversations: Selector<
+  PmConversationData[],
+> = createSelector(getRecentConversations, conversations =>
+  conversations.filter(c => c.unread > 0),
 );

@@ -1,4 +1,6 @@
 /* @flow strict-local */
+import PushNotificationIOS from '@react-native-community/push-notification-ios';
+
 import type { Notification } from './types';
 import type { JSONable, JSONableDict, JSONableInput, JSONableInputDict } from '../utils/jsonable';
 import * as logging from '../utils/logging';
@@ -97,20 +99,28 @@ class ApnsMsgValidationError extends Error {
 // APNs notification.
 //
 // @returns A `Notification` on success, `undefined` on suppressible failure.
-// @throws An ApnsMsgValidationError on interesting failure.
+// @throws An ApnsMsgValidationError on unexpected failure.
 //
-export const fromAPNsImpl = (rawData: JSONableDict): Notification | void => {
+export const fromAPNsImpl = (rawData: ?JSONableDict): Notification | void => {
   /** Helper function: fail. */
   const err = (style: string) =>
-    new ApnsMsgValidationError(`Received ${style} APNs notification`, { data: rawData });
+    new ApnsMsgValidationError(`Received ${style} APNs notification`, {
+      // an `undefined` value would make `extras` not JSONable, but we will
+      // want to know if the value is undefined
+      data: rawData === undefined ? '__undefined__' : rawData,
+    });
+
+  if (rawData == null) {
+    throw err('nullish');
+  }
 
   // APNs messages are JSON dictionaries. The `aps` entry of this dictionary is
   // required, with a structure defined by Apple; all other entries are
   // available to the application.
   //
-  // The react-native-notifications library filters out `aps`, parses it, and
-  // hands us the rest as "data". Pretty much any iOS notifications library
-  // should do the same, but we don't rely on that.
+  // PushNotificationsIOS filters out `aps`, parses it, and hands us the rest
+  // as "data". Pretty much any iOS notifications library should do
+  // the same, but we don't rely on that.
 
   const data: JSONableInputDict = (() => {
     if ('aps' in rawData) {
@@ -158,10 +168,12 @@ export const fromAPNsImpl = (rawData: JSONableDict): Notification | void => {
   }
 
   const { realm_uri } = zulip;
-  if (realm_uri !== undefined && typeof realm_uri !== 'string') {
+  if (realm_uri === undefined) {
+    throw err('archaic (pre-1.9.x)');
+  }
+  if (typeof realm_uri !== 'string') {
     throw err('invalid');
   }
-  const realm_uri_obj = Object.freeze(realm_uri === undefined ? {} : { realm_uri });
 
   if (recipient_type === 'stream') {
     const { stream, topic } = zulip;
@@ -172,7 +184,7 @@ export const fromAPNsImpl = (rawData: JSONableDict): Notification | void => {
       recipient_type: 'stream',
       stream,
       topic,
-      ...realm_uri_obj,
+      realm_uri,
     };
   } else {
     /* recipient_type === 'private' */
@@ -189,14 +201,14 @@ export const fromAPNsImpl = (rawData: JSONableDict): Notification | void => {
       return {
         recipient_type: 'private',
         pm_users: ids.sort((a, b) => a - b).join(','),
-        ...realm_uri_obj,
+        realm_uri,
       };
     }
 
     if (typeof sender_email !== 'string') {
       throw err('invalid');
     }
-    return { recipient_type: 'private', sender_email, ...realm_uri_obj };
+    return { recipient_type: 'private', sender_email, realm_uri };
   }
 
   /* unreachable */
@@ -208,7 +220,7 @@ export const fromAPNsImpl = (rawData: JSONableDict): Notification | void => {
  *
  * @returns A `Notification` on success; `undefined` on failure.
  */
-export const fromAPNs = (data: JSONableDict): Notification | void => {
+const fromAPNs = (data: ?JSONableDict): Notification | void => {
   try {
     return fromAPNsImpl(data);
   } catch (err) {
@@ -222,3 +234,20 @@ export const fromAPNs = (data: JSONableDict): Notification | void => {
 
 // Despite the name `fromAPNs`, there is no parallel Android-side `fromFCM`
 // function here; the relevant task is performed in `FcmMessage.kt`.
+
+/**
+ * Extract Zulip notification data from the blob our iOS libraries give us.
+ *
+ * On validation error (indicating a bug in either client or server),
+ * logs a warning and returns void.
+ *
+ * On valid but unrecognized input (like a future, unknown type of
+ * notification event), returns void.
+ */
+export const fromPushNotificationIOS = (notification: PushNotificationIOS): Notification | void => {
+  // This is actually typed as ?Object (and so effectively `any`); but if
+  // present, it must be a JSONable dictionary. It's giving us the
+  // notification data, which was passed over APNs as JSON.
+  const data: ?JSONableDict = notification.getData();
+  return fromAPNs(data);
+};

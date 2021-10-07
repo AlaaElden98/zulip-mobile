@@ -6,10 +6,12 @@ import {
   LOGOUT,
   APP_ONLINE,
   INITIAL_FETCH_COMPLETE,
+  INITIAL_FETCH_ABORT,
   APP_ORIENTATION,
   GOT_PUSH_TOKEN,
   TOGGLE_OUTBOX_SENDING,
   DEBUG_FLAG_TOGGLE,
+  DISMISS_SERVER_COMPAT_NOTICE,
   INITIAL_FETCH_START,
 } from '../../actionConstants';
 import sessionReducer from '../sessionReducer';
@@ -60,10 +62,10 @@ describe('sessionReducer', () => {
   test('REALM_INIT', () => {
     const action = deepFreeze({
       ...eg.action.realm_init,
-      data: { ...eg.action.realm_init.data, queue_id: 100 },
+      data: { ...eg.action.realm_init.data, queue_id: '100' },
     });
     const newState = sessionReducer(baseState, action);
-    expect(newState).toEqual({ ...baseState, eventQueueId: 100 });
+    expect(newState).toEqual({ ...baseState, eventQueueId: '100' });
   });
 
   test('APP_ONLINE', () => {
@@ -71,6 +73,15 @@ describe('sessionReducer', () => {
     const action = deepFreeze({ type: APP_ONLINE, isOnline: true });
     const newState = sessionReducer(state, action);
     expect(newState).toEqual({ ...baseState, isOnline: true });
+  });
+
+  test('INITIAL_FETCH_ABORT', () => {
+    const state = deepFreeze({ ...baseState, needsInitialFetch: true, loading: true });
+    const newState = sessionReducer(
+      state,
+      deepFreeze({ type: INITIAL_FETCH_ABORT, reason: 'server' }),
+    );
+    expect(newState).toEqual({ ...baseState, needsInitialFetch: false, loading: false });
   });
 
   test('INITIAL_FETCH_COMPLETE', () => {
@@ -109,7 +120,15 @@ describe('sessionReducer', () => {
     const action = deepFreeze({ type: DEBUG_FLAG_TOGGLE, key: 'someKey', value: true });
     expect(sessionReducer(baseState, action)).toEqual({
       ...baseState,
-      debug: { doNotMarkMessagesAsRead: false, someKey: true },
+      debug: { someKey: true },
+    });
+  });
+
+  test('DISMISS_SERVER_COMPAT_NOTICE', () => {
+    const action = deepFreeze({ type: DISMISS_SERVER_COMPAT_NOTICE });
+    expect(sessionReducer(baseState, action)).toEqual({
+      ...baseState,
+      hasDismissedServerCompatNotice: true,
     });
   });
 });

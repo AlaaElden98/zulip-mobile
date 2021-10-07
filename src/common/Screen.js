@@ -1,19 +1,17 @@
 /* @flow strict-local */
 
-import React, { PureComponent } from 'react';
-import type { Node as React$Node } from 'react';
-import { View, ScrollView } from 'react-native';
+import React, { useContext } from 'react';
+import type { Node } from 'react';
+import { ScrollView, View } from 'react-native';
 import type { ViewStyleProp } from 'react-native/Libraries/StyleSheet/StyleSheet';
-import { type EdgeInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import type { EditingEvent } from 'react-native/Libraries/Components/TextInput/TextInput';
 
-import { withSafeAreaInsets } from '../react-native-safe-area-context';
-import type { ThemeData } from '../styles';
 import styles, { createStyleSheet, ThemeContext } from '../styles';
 import type { LocalizableText } from '../types';
 import KeyboardAvoider from './KeyboardAvoider';
 import OfflineNotice from './OfflineNotice';
 import LoadingBanner from './LoadingBanner';
-import ZulipStatusBar from './ZulipStatusBar';
 import ModalNavBar from '../nav/ModalNavBar';
 import ModalSearchNavBar from '../nav/ModalSearchNavBar';
 
@@ -37,21 +35,21 @@ const componentStyles = createStyleSheet({
 });
 
 type Props = $ReadOnly<{|
-  centerContent: boolean,
-  +children: React$Node,
-  insets: EdgeInsets,
-  keyboardShouldPersistTaps: 'never' | 'always' | 'handled',
-  padding: boolean,
-  scrollEnabled: boolean,
+  centerContent?: boolean,
+  +children: Node,
+  keyboardShouldPersistTaps?: 'never' | 'always' | 'handled',
+  padding?: boolean,
+  scrollEnabled?: boolean,
   style?: ViewStyleProp,
 
-  search: boolean,
-  autoFocus: boolean,
-  searchBarOnChange: (text: string) => void,
-  shouldShowLoadingBanner: boolean,
+  search?: boolean,
+  autoFocus?: boolean,
+  searchBarOnChange?: (text: string) => void,
+  searchBarOnSubmit?: (e: EditingEvent) => void,
+  shouldShowLoadingBanner?: boolean,
 
-  canGoBack: boolean,
-  +title: LocalizableText,
+  canGoBack?: boolean,
+  +title?: LocalizableText,
 |}>;
 
 /**
@@ -64,100 +62,79 @@ type Props = $ReadOnly<{|
  * @prop children - Components to render inside the screen.
  * @prop [keyboardShouldPersistTaps] - Passed through to ScrollView.
  * @prop [padding] - Should padding be added to the contents of the screen.
- * @prop [scrollEnabled] - Passed through to ScrollView.
+ * @prop [scrollEnabled] - Whether to use a ScrollView or a normal View.
  * @prop [style] - Additional style for the ScrollView.
  *
  * @prop [search] - If 'true' show a search box in place of the title.
  * @prop [autoFocus] - If search bar enabled, should it be focused initially.
  * @prop [searchBarOnChange] - Event called on search query change.
+ * @prop [searchBarOnSubmit] - Event called on search query submit.
  *
  * @prop [canGoBack] - If true (the default), show UI for "navigate back".
  * @prop [title] - Text shown as the title of the screen.
  *                 Required unless `search` is true.
  */
-class Screen extends PureComponent<Props> {
-  static contextType = ThemeContext;
-  context: ThemeData;
+export default function Screen(props: Props): Node {
+  const { backgroundColor } = useContext(ThemeContext);
+  const {
+    autoFocus = false,
+    canGoBack = true,
+    centerContent = false,
+    children,
+    keyboardShouldPersistTaps = 'handled',
+    padding = false,
+    scrollEnabled = true,
+    search = false,
+    searchBarOnChange = (text: string) => {},
+    style,
+    title = '',
+    shouldShowLoadingBanner = true,
+    searchBarOnSubmit = (e: EditingEvent) => {},
+  } = props;
 
-  static defaultProps = {
-    centerContent: false,
-    keyboardShouldPersistTaps: 'handled',
-    padding: false,
-    scrollEnabled: true,
-
-    search: false,
-    autoFocus: false,
-    searchBarOnChange: (text: string) => {},
-    shouldShowLoadingBanner: true,
-
-    canGoBack: true,
-    title: '',
-  };
-
-  render() {
-    const {
-      autoFocus,
-      canGoBack,
-      centerContent,
-      children,
-      keyboardShouldPersistTaps,
-      padding,
-      insets,
-      scrollEnabled,
-      search,
-      searchBarOnChange,
-      style,
-      title,
-      shouldShowLoadingBanner,
-    } = this.props;
-
-    return (
-      <View
-        style={[
-          componentStyles.screen,
-          { backgroundColor: this.context.backgroundColor },
-          { paddingBottom: insets.bottom },
-        ]}
+  return (
+    <SafeAreaView
+      mode="padding"
+      edges={['bottom']}
+      style={[componentStyles.screen, { backgroundColor }]}
+    >
+      {search ? (
+        <ModalSearchNavBar
+          autoFocus={autoFocus}
+          canGoBack={canGoBack}
+          searchBarOnChange={searchBarOnChange}
+          searchBarOnSubmit={searchBarOnSubmit}
+        />
+      ) : (
+        <ModalNavBar canGoBack={canGoBack} title={title} />
+      )}
+      <OfflineNotice />
+      {shouldShowLoadingBanner && <LoadingBanner />}
+      <KeyboardAvoider
+        behavior="padding"
+        style={[componentStyles.wrapper, padding && styles.padding]}
+        contentContainerStyle={[padding && styles.padding]}
       >
-        <ZulipStatusBar />
-        {search ? (
-          <ModalSearchNavBar
-            autoFocus={autoFocus}
-            canGoBack={canGoBack}
-            searchBarOnChange={searchBarOnChange}
-          />
-        ) : (
-          <ModalNavBar canGoBack={canGoBack} title={title} />
-        )}
-        <OfflineNotice />
-        {shouldShowLoadingBanner && <LoadingBanner />}
-        <KeyboardAvoider
-          behavior="padding"
-          style={[componentStyles.wrapper, padding && styles.padding]}
-          contentContainerStyle={[padding && styles.padding]}
-        >
+        {scrollEnabled ? (
           <ScrollView
-            contentContainerStyle={[
-              // If `Screen` is responsible for managing scrolling,
-              // keep its childrens' height unbounded. If not, set a
-              // bounded height on its children, e.g., as required for
-              // a child `FlatList` or `SectionList` to work (or even
-              // another `ScrollView`, but hopefully we don't nest too
-              // many of these!).
-              !scrollEnabled ? styles.flexed : null,
-              centerContent && componentStyles.content,
-              style,
-            ]}
+            contentContainerStyle={[centerContent && componentStyles.content, style]}
             style={componentStyles.childrenWrapper}
             keyboardShouldPersistTaps={keyboardShouldPersistTaps}
-            scrollEnabled={scrollEnabled}
           >
             {children}
           </ScrollView>
-        </KeyboardAvoider>
-      </View>
-    );
-  }
+        ) : (
+          <View
+            style={[
+              componentStyles.childrenWrapper,
+              centerContent && componentStyles.content,
+              style,
+            ]}
+          >
+            {children}
+          </View>
+        )}
+      </KeyboardAvoider>
+    </SafeAreaView>
+  );
 }
-
-export default withSafeAreaInsets(Screen);

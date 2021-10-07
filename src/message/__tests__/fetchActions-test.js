@@ -1,8 +1,8 @@
 /* @flow strict-local */
 import invariant from 'invariant';
 import configureStore from 'redux-mock-store';
+// $FlowFixMe[untyped-import]
 import thunk from 'redux-thunk';
-import omit from 'lodash.omit';
 import Immutable from 'immutable';
 
 import type { GlobalState } from '../../reduxTypes';
@@ -15,11 +15,14 @@ import {
   tryFetch,
 } from '../fetchActions';
 import { FIRST_UNREAD_ANCHOR } from '../../anchor';
-import type { Message } from '../../api/modelTypes';
 import type { ServerMessage } from '../../api/messages/getMessages';
 import { streamNarrow, HOME_NARROW, HOME_NARROW_STR, keyFromNarrow } from '../../utils/narrow';
 import { GravatarURL } from '../../utils/avatar';
 import * as eg from '../../__tests__/lib/exampleData';
+import { Server5xxError, NetworkError } from '../../api/apiErrors';
+import { fakeSleep } from '../../__tests__/lib/fakeTimers';
+import { TimeoutError, BackoffMachine } from '../../utils/async';
+import * as logging from '../../utils/logging';
 
 const mockStore = configureStore([thunk]);
 
@@ -28,6 +31,11 @@ const streamNarrowStr = keyFromNarrow(narrow);
 
 global.FormData = class FormData {};
 
+const BORING_RESPONSE = JSON.stringify({
+  messages: [],
+  result: 'success',
+});
+
 describe('fetchActions', () => {
   afterEach(() => {
     fetch.reset();
@@ -35,8 +43,8 @@ describe('fetchActions', () => {
 
   describe('isFetchNeededAtAnchor', () => {
     test("false if we're caught up, even if there are no messages", () => {
-      const state = eg.reduxState({
-        session: { ...eg.baseReduxState.session, isHydrated: true },
+      const state = eg.reduxStatePlus({
+        session: { ...eg.plusReduxState.session, isHydrated: true },
         caughtUp: {
           [streamNarrowStr]: {
             newer: true,
@@ -57,8 +65,8 @@ describe('fetchActions', () => {
       const message1 = eg.streamMessage({ id: 1 });
       const message2 = eg.streamMessage({ id: 2 });
 
-      const state = eg.reduxState({
-        session: { ...eg.baseReduxState.session, isHydrated: true },
+      const state = eg.reduxStatePlus({
+        session: { ...eg.plusReduxState.session, isHydrated: true },
         caughtUp: {
           [streamNarrowStr]: {
             newer: false,
@@ -78,34 +86,145 @@ describe('fetchActions', () => {
   });
 
   describe('tryFetch', () => {
-    test('resolves any value when there is no exception', async () => {
-      const result = await tryFetch(async () => 'hello');
-
-      expect(result).toEqual('hello');
-    });
-
-    test('resolves any promise, if there is no exception', async () => {
-      const result = await tryFetch(
-        () => new Promise(resolve => setTimeout(() => resolve('hello'), 100)),
-      );
-
-      expect(result).toEqual('hello');
-    });
-
-    test('retries a call, if there is an exception', async () => {
-      // fail on first call, succeed second time
-      let callCount = 0;
-      const thrower = () => {
-        callCount++;
-        if (callCount === 1) {
-          throw new Error('First run exception');
-        }
-        return 'hello';
+    beforeAll(() => {
+      // So we don't have to think about the (random, with jitter)
+      // duration of these waits in these tests. `BackoffMachine` has
+      // its own unit tests already, so we don't have to test that it
+      // waits for the right amount of time.
+      // $FlowFixMe[cannot-write]
+      BackoffMachine.prototype.wait = async function wait() {
+        return fakeSleep(100);
       };
+    });
 
-      const result = await tryFetch(async () => thrower());
+    afterEach(() => {
+      expect(jest.getTimerCount()).toBe(0);
+      jest.clearAllTimers();
+    });
 
-      expect(result).toEqual('hello');
+    describe.each([false, true])(
+      'whether or not asked to retry; was asked this time? %s',
+      withRetry => {
+        test('resolves any promise, if there is no exception', async () => {
+          const tryFetchFunc = jest.fn(async () => {
+            await fakeSleep(10);
+            return 'hello';
+          });
+
+          await expect(tryFetch(tryFetchFunc, withRetry)).resolves.toBe('hello');
+
+          expect(tryFetchFunc).toHaveBeenCalledTimes(1);
+          await expect(tryFetchFunc.mock.results[0].value).resolves.toBe('hello');
+
+          jest.runAllTimers();
+        });
+
+        test('Rethrows an unexpected error without retrying', async () => {
+          const unexpectedError = new Error('You have displaced the mirth.');
+
+          const func = jest.fn(async () => {
+            throw unexpectedError;
+          });
+
+          await expect(tryFetch(func, withRetry)).rejects.toThrow(unexpectedError);
+          expect(func).toHaveBeenCalledTimes(1);
+
+          jest.runAllTimers();
+        });
+
+        test('times out after hanging on one request', async () => {
+          const tryFetchPromise = tryFetch(async () => {
+            await new Promise((resolve, reject) => {});
+          }, withRetry);
+
+          await fakeSleep(60000);
+          return expect(tryFetchPromise).rejects.toThrow(TimeoutError);
+        });
+      },
+    );
+
+    describe('if asked to retry', () => {
+      test('retries a call if there is a recoverable error', async () => {
+        const serverError = new Server5xxError(500);
+
+        // fail on first call, succeed second time
+        let callCount = 0;
+        const thrower = jest.fn(() => {
+          callCount++;
+          if (callCount === 1) {
+            throw serverError;
+          }
+          return 'hello';
+        });
+
+        const tryFetchFunc = jest.fn(async () => {
+          await fakeSleep(10);
+          return thrower();
+        });
+
+        await expect(tryFetch(tryFetchFunc, true)).resolves.toBe('hello');
+
+        expect(tryFetchFunc).toHaveBeenCalledTimes(2);
+        await expect(tryFetchFunc.mock.results[0].value).rejects.toThrow(serverError);
+        await expect(tryFetchFunc.mock.results[1].value).resolves.toBe('hello');
+
+        jest.runAllTimers();
+      });
+
+      test('retries a call if there is a network error', async () => {
+        const networkError = new NetworkError();
+
+        // fail on first call, succeed second time
+        let callCount = 0;
+        const thrower = jest.fn(() => {
+          callCount++;
+          if (callCount === 1) {
+            throw networkError;
+          }
+          return 'hello';
+        });
+
+        const tryFetchFunc = jest.fn(async () => {
+          await fakeSleep(10);
+          return thrower();
+        });
+
+        await expect(tryFetch(tryFetchFunc)).resolves.toBe('hello');
+
+        expect(tryFetchFunc).toHaveBeenCalledTimes(2);
+        await expect(tryFetchFunc.mock.results[0].value).rejects.toThrow(networkError);
+        await expect(tryFetchFunc.mock.results[1].value).resolves.toBe('hello');
+
+        jest.runAllTimers();
+      });
+
+      test('times out after many short-duration 5xx errors', async () => {
+        const func = jest.fn(async () => {
+          await fakeSleep(50);
+          throw new Server5xxError(500);
+        });
+
+        await expect(tryFetch(func, true)).rejects.toThrow(TimeoutError);
+
+        expect(func.mock.calls.length).toBeGreaterThan(50);
+      });
+    });
+
+    describe('if not asked to retry', () => {
+      test('does not retry a call if there is a server error', async () => {
+        const serverError = new Server5xxError(500);
+
+        const tryFetchFunc = jest.fn(async () => {
+          await fakeSleep(10);
+          throw serverError;
+        });
+
+        await expect(tryFetch(tryFetchFunc, false)).rejects.toThrow(serverError);
+
+        expect(tryFetchFunc).toHaveBeenCalledTimes(1);
+
+        jest.runAllTimers();
+      });
     });
   });
 
@@ -118,22 +237,18 @@ describe('fetchActions', () => {
     };
     const message1 = eg.streamMessage({ id: 1, sender });
 
-    type CommonFields = $Diff<Message, {| reactions: mixed, avatar_url: mixed |}>;
-
     // message1 exactly as we receive it from the server, before our
     // own transformations.
     //
     // TODO: Deduplicate this logic with similar logic in
     // migrateMessages-test.js.
     const serverMessage1: ServerMessage = {
-      ...(omit(message1, 'reactions', 'avatar_url'): CommonFields),
+      ...message1,
       reactions: [],
       avatar_url: null, // Null in server data will be transformed to a GravatarURL
     };
 
-    const baseState = eg.reduxState({
-      accounts: [eg.makeAccount()],
-      realm: { ...eg.baseReduxState.realm, user_id: eg.selfUser.user_id },
+    const baseState = eg.reduxStatePlus({
       narrows: Immutable.Map({
         [streamNarrowStr]: [message1.id],
       }),
@@ -192,6 +307,12 @@ describe('fetchActions', () => {
     });
 
     describe('failure', () => {
+      beforeAll(() => {
+        // suppress `logging.warn` output
+        // $FlowFixMe[prop-missing]: Jest mock
+        logging.warn.mockReturnValue();
+      });
+
       test('rejects when user is not logged in, dispatches MESSAGE_FETCH_ERROR', async () => {
         const stateWithoutAccount = {
           ...baseState,
@@ -211,7 +332,7 @@ describe('fetchActions', () => {
           ),
         ).rejects.toThrow(
           // Update this with changes to the message string or error type.
-          new Error('Active account not logged in'),
+          new Error('getAccount: must have account'),
         );
 
         const actions = store.getActions();
@@ -219,7 +340,7 @@ describe('fetchActions', () => {
         expect(actions[actions.length - 1]).toMatchObject({
           type: 'MESSAGE_FETCH_ERROR',
           // Update this with changes to the message string or error type.
-          error: new Error('Active account not logged in'),
+          error: new Error('getAccount: must have account'),
         });
       });
 
@@ -282,25 +403,25 @@ describe('fetchActions', () => {
         const fetchError = new Error('Network request failed (or something)');
 
         fetch.mockResponseFailure(fetchError);
+        // $FlowFixMe[prop-missing]: Jest mock
+        logging.info.mockReturnValue();
 
         await expect(
           store.dispatch(
             fetchMessages({ narrow: HOME_NARROW, anchor: 0, numBefore: 1, numAfter: 1 }),
           ),
         ).rejects.toThrow(fetchError);
-      });
-    });
 
-    const BORING_RESPONSE = JSON.stringify({
-      messages: [],
-      result: 'success',
+        // $FlowFixMe[prop-missing]: Jest mock
+        expect(logging.info.mock.calls).toHaveLength(1);
+        // $FlowFixMe[prop-missing]: Jest mock
+        logging.info.mockReset();
+      });
     });
 
     test('when messages to be fetched both before and after anchor, numBefore and numAfter are greater than zero', async () => {
       const store = mockStore<GlobalState, Action>(
-        eg.reduxState({
-          accounts: [eg.selfAccount],
-          realm: { ...eg.baseReduxState.realm, user_id: eg.selfUser.user_id },
+        eg.reduxStatePlus({
           narrows: Immutable.Map({
             [streamNarrowStr]: [1],
           }),
@@ -324,9 +445,7 @@ describe('fetchActions', () => {
 
     test('when no messages to be fetched before the anchor, numBefore is not greater than zero', async () => {
       const store = mockStore<GlobalState, Action>(
-        eg.reduxState({
-          accounts: [eg.selfAccount],
-          realm: { ...eg.baseReduxState.realm, user_id: eg.selfUser.user_id },
+        eg.reduxStatePlus({
           narrows: Immutable.Map({
             [streamNarrowStr]: [1],
           }),
@@ -349,9 +468,7 @@ describe('fetchActions', () => {
 
     test('when no messages to be fetched after the anchor, numAfter is not greater than zero', async () => {
       const store = mockStore<GlobalState, Action>(
-        eg.reduxState({
-          accounts: [eg.selfAccount],
-          realm: { ...eg.baseReduxState.realm, user_id: eg.selfUser.user_id },
+        eg.reduxStatePlus({
           narrows: Immutable.Map({
             [streamNarrowStr]: [1],
           }),
@@ -377,15 +494,18 @@ describe('fetchActions', () => {
     const message1 = eg.streamMessage({ id: 1 });
     const message2 = eg.streamMessage({ id: 2 });
 
-    const baseState = eg.reduxState({
-      accounts: [eg.selfAccount],
-      narrows: eg.baseReduxState.narrows.merge(
+    const baseState = eg.reduxStatePlus({
+      narrows: eg.plusReduxState.narrows.merge(
         Immutable.Map({
           [streamNarrowStr]: [message2.id],
           [HOME_NARROW_STR]: [message1.id, message2.id],
         }),
       ),
       messages: eg.makeMessagesState([message1, message2]),
+    });
+
+    beforeEach(() => {
+      fetch.mockResponseSuccess(BORING_RESPONSE);
     });
 
     test('message fetch start action is dispatched with numBefore greater than zero', async () => {
@@ -446,12 +566,12 @@ describe('fetchActions', () => {
       expect(actions).toHaveLength(0);
     });
 
-    test('when needsInitialFetch is true, no action is dispatched', async () => {
+    test('when loading is true, no action is dispatched', async () => {
       const store = mockStore<GlobalState, Action>({
         ...baseState,
         session: {
           ...baseState.session,
-          needsInitialFetch: true,
+          loading: true,
         },
       });
 
@@ -466,15 +586,18 @@ describe('fetchActions', () => {
     const message1 = eg.streamMessage({ id: 1 });
     const message2 = eg.streamMessage({ id: 2 });
 
-    const baseState = eg.reduxState({
-      accounts: [eg.selfAccount],
-      narrows: eg.baseReduxState.narrows.merge(
+    const baseState = eg.reduxStatePlus({
+      narrows: eg.plusReduxState.narrows.merge(
         Immutable.Map({
           [streamNarrowStr]: [message2.id],
           [HOME_NARROW_STR]: [message1.id, message2.id],
         }),
       ),
       messages: eg.makeMessagesState([message1, message2]),
+    });
+
+    beforeEach(() => {
+      fetch.mockResponseSuccess(BORING_RESPONSE);
     });
 
     test('message fetch start action is dispatched with numAfter greater than zero', async () => {
@@ -535,12 +658,12 @@ describe('fetchActions', () => {
       expect(actions).toHaveLength(0);
     });
 
-    test('when needsInitialFetch is true, no action is dispatched', async () => {
+    test('when loading is true, no action is dispatched', async () => {
       const store = mockStore<GlobalState, Action>({
         ...baseState,
         session: {
           ...baseState.session,
-          needsInitialFetch: true,
+          loading: true,
         },
       });
 

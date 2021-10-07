@@ -2,7 +2,7 @@
 import { EventTypes } from '../api/eventTypes';
 
 import * as logging from '../utils/logging';
-import type { GlobalState, EventAction } from '../types';
+import type { PerAccountState, EventAction } from '../types';
 import {
   EVENT_ALERT_WORDS,
   EVENT_NEW_MESSAGE,
@@ -19,6 +19,7 @@ import {
   EVENT_USER_REMOVE,
   EVENT_USER_UPDATE,
   EVENT_MUTED_TOPICS,
+  EVENT_MUTED_USERS,
   EVENT_USER_GROUP_ADD,
   EVENT_USER_GROUP_REMOVE,
   EVENT_USER_GROUP_UPDATE,
@@ -34,7 +35,7 @@ import {
 } from '../actionConstants';
 import { getOwnUserId, tryGetUserForId } from '../users/userSelectors';
 import { AvatarURL } from '../utils/avatar';
-import { getCurrentRealm } from '../account/accountsSelectors';
+import { getRealmUrl } from '../account/accountsSelectors';
 
 const opToActionUserGroup = {
   add: EVENT_USER_GROUP_ADD,
@@ -59,6 +60,7 @@ const actionTypeOfEventType = {
   subscription: EVENT_SUBSCRIPTION,
   presence: EVENT_PRESENCE,
   muted_topics: EVENT_MUTED_TOPICS,
+  muted_users: EVENT_MUTED_USERS,
   realm_emoji: EVENT_REALM_EMOJI_UPDATE,
   realm_filters: EVENT_REALM_FILTERS,
   submessage: EVENT_SUBMESSAGE,
@@ -67,10 +69,32 @@ const actionTypeOfEventType = {
   user_status: EVENT_USER_STATUS_UPDATE,
 };
 
+/**
+ * Translate a Zulip event from the server into one of our Redux actions.
+ *
+ * If the action is one we don't currently handle, return null.
+ * If it's one we don't recognize at all, log a warning and return null.
+ *
+ * For reference on the events in the Zulip API, see:
+ *   https://zulip.com/api/get-events
+ *
+ * This function takes the Redux state as an argument because for a handful
+ * of types of events, we have it attach some pieces of the state inside the
+ * resulting action.  That is a now-obsolete workaround for letting our
+ * Redux sub-reducers use data from elsewhere in the Redux state; don't add
+ * new uses.
+ *
+ * The new approach is that we pass the global Redux state to each
+ * sub-reducer, and they should use that instead.  See ef251f48a for
+ * discussion, and a2000b9c8 and its parent for an example of using it.
+ */
 // This FlowFixMe is because this function encodes a large number of
 // assumptions about the events the server sends, and doesn't check them.
-export default (state: GlobalState, event: $FlowFixMe): EventAction => {
+export default (state: PerAccountState, event: $FlowFixMe): EventAction | null => {
   switch (event.type) {
+    // For reference on each type of event, see:
+    // https://zulip.com/api/get-events#events
+
     case 'alert_words':
       return {
         type: EVENT_ALERT_WORDS,
@@ -83,14 +107,14 @@ export default (state: GlobalState, event: $FlowFixMe): EventAction => {
         id: event.id,
         message: {
           ...event.message,
-          // Move `flags` key from `event` to `event.message` for consistency, and
-          // default to an empty array if `event.flags` is not set.
+          // Move `flags` key from `event` to `event.message` for
+          // consistency; default to empty if `event.flags` is not set.
           flags: event.message.flags ?? event.flags ?? [],
           avatar_url: AvatarURL.fromUserOrBotData({
             rawAvatarUrl: event.message.avatar_url,
             email: event.message.sender_email,
             userId: event.message.sender_id,
-            realm: getCurrentRealm(state),
+            realm: getRealmUrl(state),
           }),
         },
         local_message_id: event.local_message_id,
@@ -98,15 +122,16 @@ export default (state: GlobalState, event: $FlowFixMe): EventAction => {
         ownUserId: getOwnUserId(state),
       };
 
-    // Before server feature level 13, or if we don't specify the
-    // `bulk_message_deletion` client capability (which we do) this
-    // event has `message_id` instead of `message_ids`.
     case 'delete_message':
       return {
         type: EVENT_MESSAGE_DELETE,
+        // Before server feature level 13 (or if we didn't specify the
+        // `bulk_message_deletion` client capability, which we do), this
+        // event has `message_id` instead of `message_ids`.
         messageIds: event.message_ids ?? [event.message_id],
       };
 
+    case EventTypes.restart:
     case EventTypes.stream:
       return {
         type: EVENT,
@@ -117,8 +142,8 @@ export default (state: GlobalState, event: $FlowFixMe): EventAction => {
     case 'subscription':
     case 'presence':
     case 'muted_topics':
+    case 'muted_users':
     case 'realm_emoji':
-    case 'realm_filters':
     case 'submessage':
     case 'update_global_notifications':
     case 'update_display_settings':
@@ -128,8 +153,41 @@ export default (state: GlobalState, event: $FlowFixMe): EventAction => {
         type: actionTypeOfEventType[event.type],
       };
 
+    // See notes on `RealmFilter` and `RealmLinkifier` types.
+    case 'realm_filters': {
+      return {
+        ...event,
+        type: EVENT_REALM_FILTERS,
+        realm_filters: event.realm_filters,
+      };
+    }
+
+    // See notes on `RealmFilter` and `RealmLinkifier` types.
+    //
+    // Empirically, servers that know about the new format send two
+    // events for every change to the linkifiers: one in this new
+    // format and one in the 'realm_filters' format. That's whether we
+    // put 'realm_linkifiers' or 'realm_filters' in
+    // `fetch_event_types`.
+    //
+    // Shrug, because we can handle both events, and both events give
+    // the whole array of linkifiers, which we're happy to clobber the
+    // old state with.
+    case 'realm_linkifiers': {
+      return {
+        ...event,
+        type: EVENT_REALM_FILTERS,
+        // We do the same in `registerForEvents`'s transform function.
+        realm_filters: event.realm_linkifiers.map(({ pattern, url_format, id }) => [
+          pattern,
+          url_format,
+          id,
+        ]),
+      };
+    }
+
     case 'realm_user': {
-      const realm = getCurrentRealm(state);
+      const realm = getRealmUrl(state);
 
       switch (event.op) {
         case 'add': {
@@ -161,9 +219,8 @@ export default (state: GlobalState, event: $FlowFixMe): EventAction => {
               "`realm_user` event with op `update` received for a user we don't know about",
               { userId },
             );
-            return { type: 'ignore' };
+            return null;
           }
-
           return {
             type: EVENT_USER_UPDATE,
             id: event.id,
@@ -195,7 +252,7 @@ export default (state: GlobalState, event: $FlowFixMe): EventAction => {
           };
 
         default:
-          return { type: 'ignore' };
+          return null;
       }
     }
 
@@ -203,7 +260,7 @@ export default (state: GlobalState, event: $FlowFixMe): EventAction => {
       // If implementing, don't forget to convert `avatar_url` on
       // `op: 'add'`, and (where `avatar_url` is present) on
       // `op: 'update'`.
-      return { type: 'ignore' };
+      return null;
 
     case 'reaction':
       return {
@@ -220,12 +277,17 @@ export default (state: GlobalState, event: $FlowFixMe): EventAction => {
       };
 
     case 'heartbeat':
-      return { type: 'ignore' };
+      return null;
 
     case 'update_message_flags':
       return {
         ...event,
         type: EVENT_UPDATE_MESSAGE_FLAGS,
+
+        // Servers with feature level 32+ send `op`. Servers will eventually
+        // stop sending `operation`; see #4238.
+        op: event.op ?? event.operation,
+
         allMessages: state.messages,
       };
 
@@ -244,6 +306,7 @@ export default (state: GlobalState, event: $FlowFixMe): EventAction => {
       };
 
     default:
-      return { type: 'unknown', event };
+      logging.error('Unhandled Zulip API event', event);
+      return null;
   }
 };

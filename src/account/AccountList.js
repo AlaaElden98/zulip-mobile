@@ -1,5 +1,6 @@
 /* @flow strict-local */
 import React from 'react';
+import type { Node } from 'react';
 import { View, FlatList } from 'react-native';
 
 import type { AccountStatus } from './accountsSelectors';
@@ -8,11 +9,11 @@ import AccountItem from './AccountItem';
 
 type Props = $ReadOnly<{|
   accounts: $ReadOnlyArray<AccountStatus>,
-  onAccountSelect: number => void,
-  onAccountRemove: number => void,
+  onAccountSelect: number => Promise<void> | void,
+  onAccountRemove: number => Promise<void> | void,
 |}>;
 
-export default function AccountList(props: Props) {
+export default function AccountList(props: Props): Node {
   const { accounts, onAccountSelect, onAccountRemove } = props;
 
   return (
@@ -24,9 +25,7 @@ export default function AccountList(props: Props) {
         renderItem={({ item, index }) => (
           <AccountItem
             index={index}
-            showDoneIcon={index === 0 && item.isLoggedIn}
-            email={item.email}
-            realm={item.realm}
+            account={item}
             onSelect={onAccountSelect}
             onRemove={onAccountRemove}
           />

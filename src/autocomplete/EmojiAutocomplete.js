@@ -1,58 +1,47 @@
 /* @flow strict-local */
 
-import React, { PureComponent } from 'react';
+import React from 'react';
+import type { Node } from 'react';
 import { FlatList } from 'react-native';
 
 import { Popup } from '../common';
 import EmojiRow from '../emoji/EmojiRow';
 import { getFilteredEmojis } from '../emoji/data';
-import type { RealmEmojiById, Dispatch } from '../types';
-import { connect } from '../react-redux';
+import { useSelector } from '../react-redux';
 import { getActiveImageEmojiByName } from '../selectors';
 
 type Props = $ReadOnly<{|
-  dispatch: Dispatch,
   filter: string,
-  activeImageEmojiByName: RealmEmojiById,
   onAutocomplete: (name: string) => void,
 |}>;
 
 const MAX_CHOICES = 30;
 
-class EmojiAutocomplete extends PureComponent<Props> {
-  onAutocomplete = (name: string): void => {
-    this.props.onAutocomplete(name);
-  };
+export default function EmojiAutocomplete(props: Props): Node {
+  const { filter, onAutocomplete } = props;
+  const activeImageEmojiByName = useSelector(getActiveImageEmojiByName);
+  const emojiNames = getFilteredEmojis(filter, activeImageEmojiByName);
 
-  render() {
-    const { filter, activeImageEmojiByName } = this.props;
-    const emojiNames = getFilteredEmojis(filter, activeImageEmojiByName);
-
-    if (emojiNames.length === 0) {
-      return null;
-    }
-
-    return (
-      <Popup>
-        <FlatList
-          keyboardShouldPersistTaps="always"
-          initialNumToRender={12}
-          data={emojiNames.slice(0, MAX_CHOICES)}
-          keyExtractor={item => item.name}
-          renderItem={({ item }) => (
-            <EmojiRow
-              type={item.emoji_type}
-              code={item.code}
-              name={item.name}
-              onPress={this.onAutocomplete}
-            />
-          )}
-        />
-      </Popup>
-    );
+  if (emojiNames.length === 0) {
+    return null;
   }
-}
 
-export default connect(state => ({
-  activeImageEmojiByName: getActiveImageEmojiByName(state),
-}))(EmojiAutocomplete);
+  return (
+    <Popup>
+      <FlatList
+        keyboardShouldPersistTaps="always"
+        initialNumToRender={12}
+        data={emojiNames.slice(0, MAX_CHOICES)}
+        keyExtractor={item => item.name}
+        renderItem={({ item }) => (
+          <EmojiRow
+            type={item.emoji_type}
+            code={item.code}
+            name={item.name}
+            onPress={onAutocomplete}
+          />
+        )}
+      />
+    </Popup>
+  );
+}

@@ -1,9 +1,8 @@
 /* @flow strict-local */
-import React, { PureComponent } from 'react';
-import type { Node as React$Node } from 'react';
+import React, { useContext } from 'react';
+import type { Node } from 'react';
 import { View } from 'react-native';
 
-import type { ThemeData } from '../styles';
 import { ThemeContext, createStyleSheet } from '../styles';
 
 const styles = createStyleSheet({
@@ -19,18 +18,14 @@ const styles = createStyleSheet({
 });
 
 type Props = $ReadOnly<{|
-  children: React$Node,
+  children: Node,
 |}>;
 
-export default class Popup extends PureComponent<Props> {
-  static contextType = ThemeContext;
-  context: ThemeData;
-
-  render() {
-    return (
-      <View style={[{ backgroundColor: this.context.backgroundColor }, styles.popup]}>
-        {this.props.children}
-      </View>
-    );
-  }
+export default function Popup(props: Props): Node {
+  const themeContext = useContext(ThemeContext);
+  return (
+    <View style={[{ backgroundColor: themeContext.backgroundColor }, styles.popup]}>
+      {props.children}
+    </View>
+  );
 }

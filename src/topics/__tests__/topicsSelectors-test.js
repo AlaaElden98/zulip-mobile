@@ -1,11 +1,8 @@
 /* @flow strict-local */
-import Immutable from 'immutable';
-
-import { getTopicsForNarrow, getLastMessageTopic, getTopicsForStream } from '../topicSelectors';
-import { HOME_NARROW, streamNarrow, keyFromNarrow } from '../../utils/narrow';
+import { getTopicsForNarrow, getTopicsForStream } from '../topicSelectors';
+import { HOME_NARROW, streamNarrow } from '../../utils/narrow';
 import { reducer as unreadReducer } from '../../unread/unreadModel';
 import * as eg from '../../__tests__/lib/exampleData';
-import { mkMessageAction } from '../../unread/__tests__/unread-testlib';
 
 describe('getTopicsForNarrow', () => {
   test('when no topics return an empty list', () => {
@@ -21,45 +18,14 @@ describe('getTopicsForNarrow', () => {
     const state = eg.reduxState({
       streams: [stream],
       topics: {
-        [stream.stream_id]: [{ name: 'hi', max_id: 123 }, { name: 'wow', max_id: 234 }],
+        // prettier-ignore
+        [stream.stream_id]: [{ name: 'hi', max_id: 123 }, { name: 'wow', max_id: 234 }]
       },
     });
 
     const topics = getTopicsForNarrow(state, streamNarrow(stream.name));
 
     expect(topics).toEqual(['hi', 'wow']);
-  });
-});
-
-describe('getLastMessageTopic', () => {
-  test('when no messages in narrow return an empty string', () => {
-    const state = eg.reduxState({
-      narrows: Immutable.Map({}),
-      users: [eg.selfUser],
-      realm: eg.realmState({ user_id: eg.selfUser.user_id, email: eg.selfUser.email }),
-    });
-
-    const topic = getLastMessageTopic(state, HOME_NARROW);
-
-    expect(topic).toEqual('');
-  });
-
-  test('when one or more messages return the topic of the last one', () => {
-    const narrow = streamNarrow('hello');
-    const message1 = eg.streamMessage({ id: 1 });
-    const message2 = eg.streamMessage({ id: 2, subject: 'some topic' });
-    const state = eg.reduxState({
-      narrows: Immutable.Map({
-        [keyFromNarrow(narrow)]: [1, 2],
-      }),
-      messages: eg.makeMessagesState([message1, message2]),
-      users: [eg.selfUser],
-      realm: eg.realmState({ user_id: eg.selfUser.user_id, email: eg.selfUser.email }),
-    });
-
-    const topic = getLastMessageTopic(state, narrow);
-
-    expect(topic).toEqual(message2.subject);
   });
 });
 
@@ -105,6 +71,7 @@ describe('getTopicsForStream', () => {
           { name: 'topic 5', max_id: 9 },
         ],
       },
+      // prettier-ignore
       mute: [['stream 1', 'topic 1'], ['stream 1', 'topic 3'], ['stream 2', 'topic 2']],
       unread: [
         eg.streamMessage({ stream_id: 1, subject: 'topic 2', id: 1 }),
@@ -113,7 +80,7 @@ describe('getTopicsForStream', () => {
         eg.streamMessage({ stream_id: 1, subject: 'topic 4', id: 7 }),
         eg.streamMessage({ stream_id: 1, subject: 'topic 4', id: 8 }),
       ].reduce(
-        (st, message) => unreadReducer(st, mkMessageAction(message), eg.plusReduxState),
+        (st, message) => unreadReducer(st, eg.mkActionEventNewMessage(message), eg.plusReduxState),
         eg.plusReduxState.unread,
       ),
     });

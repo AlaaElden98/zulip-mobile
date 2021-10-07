@@ -1,5 +1,6 @@
 /* @flow strict-local */
-import React, { PureComponent } from 'react';
+import React from 'react';
+import type { Node } from 'react';
 import { FlatList } from 'react-native';
 
 import type { RouteProp } from '../react-navigation';
@@ -13,18 +14,16 @@ type Props = $ReadOnly<{|
   route: RouteProp<'timing', void>,
 |}>;
 
-export default class TimingScreen extends PureComponent<Props> {
-  render() {
-    return (
-      <Screen title="Timing" scrollEnabled={false}>
-        <FlatList
-          data={timing.log}
-          keyExtractor={(item, index) => index.toString()}
-          renderItem={({ item }) => (
-            <TimeItem text={item.text} startMs={item.startMs} endMs={item.endMs} />
-          )}
-        />
-      </Screen>
-    );
-  }
+export default function TimingScreen(props: Props): Node {
+  return (
+    <Screen title="Timing" scrollEnabled={false}>
+      <FlatList
+        data={timing.log}
+        keyExtractor={(item, index) => index.toString()}
+        renderItem={({ item }) => (
+          <TimeItem text={item.text} startMs={item.startMs} endMs={item.endMs} />
+        )}
+      />
+    </Screen>
+  );
 }

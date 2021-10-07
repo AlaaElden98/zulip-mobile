@@ -1,9 +1,10 @@
 /* @flow strict-local */
+import messages from '../i18n/messages';
 
 export type Language = {|
-  locale: string,
+  tag: $Keys<typeof messages>,
   name: string,
-  nativeName: string,
+  selfname: string,
 |};
 
 /**
@@ -23,48 +24,58 @@ export type Language = {|
  * To see translation percentages, consult Transifex:
  *   https://www.transifex.com/zulip/zulip/mobile/
  *
- * For the values of `nativeName`, consult Wikipedia:
+ * For the values of `selfname`, consult Wikipedia:
  *   https://meta.wikimedia.org/wiki/List_of_Wikipedias
+ *   https://en.wikipedia.org/wiki/Special:Preferences
  * or better yet, Wikipedia's own mobile UIs.  Wikipedia is a very
  * conscientiously international and intercultural project with a lot of
  * effort going into it by speakers of many languages, which makes it a
  * useful gold standard for this.
  */
 const languages: $ReadOnlyArray<Language> = [
-  { locale: 'en', name: 'English', nativeName: 'English' },
-  { locale: 'ar', name: 'Arabic', nativeName: 'العربية' },
-  { locale: 'bg', name: 'Bulgarian', nativeName: 'Български' },
-  { locale: 'ca', name: 'Catalan', nativeName: 'Català' },
-  { locale: 'zh-Hans', name: 'Chinese (Simplified)', nativeName: '中文（简体）' },
-  { locale: 'zh-Hant', name: 'Chinese (Traditional)', nativeName: '中文 (繁体)' },
-  { locale: 'cs', name: 'Czech', nativeName: 'Čeština' },
-  { locale: 'nl', name: 'Dutch', nativeName: 'Nederlands' },
-  // TODO: add `en_GB` -- it's "100% translated", though that just means
-  //   the one string mentioning "organization" has s/z/s/ in that word
-  { locale: 'fi', name: 'Finnish', nativeName: 'Suomi' },
-  { locale: 'fr', name: 'French', nativeName: 'Français' },
-  { locale: 'gl', name: 'Galician', nativeName: 'Galego' },
-  { locale: 'de', name: 'German', nativeName: 'Deutsch' },
-  { locale: 'hi', name: 'Hindi', nativeName: 'हिन्दी' },
-  { locale: 'hu', name: 'Hungarian', nativeName: 'Magyar' },
-  { locale: 'id-ID', name: 'Indonesian', nativeName: 'Bahasa Indonesia' },
-  { locale: 'it', name: 'Italian', nativeName: 'Italiano' },
-  { locale: 'ja', name: 'Japanese', nativeName: '日本語' },
-  { locale: 'ko', name: 'Korean', nativeName: '한국어' },
-  { locale: 'lt', name: 'Lithuanian', nativeName: 'Lietuvių' },
-  { locale: 'ml', name: 'Malayalam', nativeName: 'മലയാളം' },
-  { locale: 'fa', name: 'Persian', nativeName: 'فارسی' },
-  { locale: 'pl', name: 'Polish', nativeName: 'Polski' },
-  { locale: 'pt', name: 'Portuguese', nativeName: 'Português' },
-  { locale: 'ro', name: 'Romanian', nativeName: 'Română' },
-  { locale: 'ru', name: 'Russian', nativeName: 'Русский' },
-  { locale: 'sr', name: 'Serbian', nativeName: 'Српски' },
-  { locale: 'es', name: 'Spanish', nativeName: 'Español' },
-  { locale: 'sv', name: 'Swedish', nativeName: 'Svenska' },
-  { locale: 'ta', name: 'Tamil', nativeName: 'தமிழ்' },
-  { locale: 'tr', name: 'Turkish', nativeName: 'Türkçe' },
-  { locale: 'uk', name: 'Ukrainian', nativeName: 'Українська' },
-  { locale: 'vi', name: 'Vietnamese', nativeName: 'Tiếng Việt' },
+  // Keep these sorted by selfname.
+  //
+  // When adding a language here, remember to add the language's name
+  // (in English) to messages_en.json, too, so it can be translated.
+  { tag: 'id', name: 'Indonesian', selfname: 'Bahasa Indonesia' },
+  { tag: 'ca', name: 'Catalan', selfname: 'Català' },
+  { tag: 'cs', name: 'Czech', selfname: 'Čeština' },
+  { tag: 'da', name: 'Danish', selfname: 'Dansk' },
+  { tag: 'de', name: 'German', selfname: 'Deutsch' },
+  { tag: 'en', name: 'English', selfname: 'English' },
+  { tag: 'en-GB', name: 'English (U.K.)', selfname: 'English (U.K.)' },
+  { tag: 'es', name: 'Spanish', selfname: 'Español' },
+  { tag: 'fr', name: 'French', selfname: 'Français' },
+  { tag: 'gl', name: 'Galician', selfname: 'Galego' },
+  { tag: 'it', name: 'Italian', selfname: 'Italiano' },
+  { tag: 'lt', name: 'Lithuanian', selfname: 'Lietuvių' },
+  { tag: 'hu', name: 'Hungarian', selfname: 'Magyar' },
+  { tag: 'nl', name: 'Dutch', selfname: 'Nederlands' },
+  { tag: 'pl', name: 'Polish', selfname: 'Polski' },
+  // `pt-BR` omitted; it's over the threshold but fragmentary compared to
+  // plain `pt`, which is meant to be the same thing.  See discussion:
+  //   https://github.com/zulip/zulip-mobile/pull/4901#discussion_r673472275
+  //   https://chat.zulip.org/#narrow/stream/58-translation/topic/language.20cleanup
+  { tag: 'pt', name: 'Portuguese', selfname: 'Português' },
+  { tag: 'pt-PT', name: 'Portuguese (Portugal)', selfname: 'Português (Portugal)' },
+  { tag: 'ro', name: 'Romanian', selfname: 'Română' },
+  { tag: 'fi', name: 'Finnish', selfname: 'Suomi' },
+  { tag: 'sv', name: 'Swedish', selfname: 'Svenska' },
+  { tag: 'vi', name: 'Vietnamese', selfname: 'Tiếng Việt' },
+  { tag: 'tr', name: 'Turkish', selfname: 'Türkçe' },
+  { tag: 'bg', name: 'Bulgarian', selfname: 'Български' },
+  { tag: 'ru', name: 'Russian', selfname: 'Русский' },
+  { tag: 'sr', name: 'Serbian', selfname: 'Српски' },
+  { tag: 'uk', name: 'Ukrainian', selfname: 'Українська' },
+  { tag: 'ar', name: 'Arabic', selfname: 'العربية' },
+  { tag: 'fa', name: 'Persian', selfname: 'فارسی' },
+  { tag: 'hi', name: 'Hindi', selfname: 'हिन्दी' },
+  { tag: 'ta', name: 'Tamil', selfname: 'தமிழ்' },
+  { tag: 'ml', name: 'Malayalam', selfname: 'മലയാളം' },
+  { tag: 'ko', name: 'Korean', selfname: '한국어' },
+  { tag: 'zh-Hans', name: 'Chinese (China)', selfname: '简体中文（中国）' },
+  { tag: 'zh-TW', name: 'Chinese (Taiwan)', selfname: '繁體中文（台灣）' },
+  { tag: 'ja', name: 'Japanese', selfname: '日本語' },
 ];
 
 export default languages;

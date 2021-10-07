@@ -1,7 +1,7 @@
 /* @flow strict-local */
 import { createSelector } from 'reselect';
 
-import type { GlobalState, Narrow, Selector, Stream, Subscription } from '../types';
+import type { PerAccountState, Narrow, Selector, Stream, Subscription } from '../types';
 import { isStreamOrTopicNarrow, streamNameOfNarrow } from '../utils/narrow';
 import { getSubscriptions, getStreams } from '../directSelectors';
 
@@ -19,6 +19,11 @@ import { getSubscriptions, getStreams } from '../directSelectors';
 export const getStreamsById: Selector<Map<number, Stream>> = createSelector(
   getStreams,
   streams => new Map(streams.map(stream => [stream.stream_id, stream])),
+);
+
+export const getStreamsByName: Selector<Map<string, Stream>> = createSelector(
+  getStreams,
+  streams => new Map(streams.map(stream => [stream.name, stream])),
 );
 
 export const getSubscriptionsById: Selector<Map<number, Subscription>> = createSelector(
@@ -65,7 +70,7 @@ export const getSubscribedStreams: Selector<Subscription[]> = createSelector(
  * See `getStreamsById` for use when a stream might not exist, or when
  * multiple streams are relevant.
  */
-export const getStreamForId = (state: GlobalState, streamId: number): Stream => {
+export const getStreamForId = (state: PerAccountState, streamId: number): Stream => {
   const stream = getStreamsById(state).get(streamId);
   if (!stream) {
     throw new Error(`getStreamForId: missing stream: id ${streamId}`);
@@ -92,7 +97,7 @@ export const getIsActiveStreamAnnouncementOnly: Selector<boolean, Narrow> = crea
  *
  * Gives undefined for narrows that are not stream or topic narrows.
  */
-export const getStreamColorForNarrow = (state: GlobalState, narrow: Narrow) => {
+export const getStreamColorForNarrow = (state: PerAccountState, narrow: Narrow): string | void => {
   if (!isStreamOrTopicNarrow(narrow)) {
     return undefined;
   }

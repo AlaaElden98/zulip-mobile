@@ -1,6 +1,17 @@
 /* @flow strict-local */
 import { createSelector } from 'reselect';
-import type { Account, Auth, GlobalState, Identity, Selector } from '../types';
+import invariant from 'invariant';
+
+import type {
+  Account,
+  Auth,
+  PerAccountState,
+  GlobalState,
+  Identity,
+  Selector,
+  GlobalSelector,
+} from '../types';
+import { assumeSecretlyGlobalState } from '../reduxTypes';
 import { getAccounts } from '../directSelectors';
 import { identityOfAccount, keyOfIdentity, identityOfAuth, authOfAccount } from './accountMisc';
 import { ZulipVersion } from '../utils/zulipVersion';
@@ -14,14 +25,14 @@ export type AccountStatus = {| ...Identity, isLoggedIn: boolean |};
  * This should be used in preference to `getAccounts` where we don't
  * actually need the API keys, but just need to know whether we have them.
  */
-export const getAccountStatuses: Selector<$ReadOnlyArray<AccountStatus>> = createSelector(
-  getAccounts,
-  accounts =>
-    accounts.map(({ realm, email, apiKey }) => ({ realm, email, isLoggedIn: apiKey !== '' })),
+export const getAccountStatuses: GlobalSelector<
+  $ReadOnlyArray<AccountStatus>,
+> = createSelector(getAccounts, accounts =>
+  accounts.map(({ realm, email, apiKey }) => ({ realm, email, isLoggedIn: apiKey !== '' })),
 );
 
 /** The list of known accounts, reduced to `Identity`. */
-export const getIdentities: Selector<$ReadOnlyArray<Identity>> = createSelector(
+export const getIdentities: GlobalSelector<$ReadOnlyArray<Identity>> = createSelector(
   getAccounts,
   accounts => accounts.map(identityOfAccount),
 );
@@ -29,7 +40,7 @@ export const getIdentities: Selector<$ReadOnlyArray<Identity>> = createSelector(
 /**
  * All known accounts, indexed by identity.
  */
-export const getAccountsByIdentity: Selector<(Identity) => Account | void> = createSelector(
+export const getAccountsByIdentity: GlobalSelector<(Identity) => Account | void> = createSelector(
   getAccounts,
   accounts => {
     const map = new Map(
@@ -40,98 +51,87 @@ export const getAccountsByIdentity: Selector<(Identity) => Account | void> = cre
 );
 
 /**
- * The account currently foregrounded in the UI, or undefined if none.
+ * The per-account state for the active account; undefined if no such account.
  *
- * For use in early startup, onboarding, account-switch, or other times
- * where there may be no active account.
+ * I.e., for the account currently foregrounded in the UI.  See glossary:
+ *   https://github.com/zulip/zulip-mobile/blob/main/docs/glossary.md
  *
- * See `getActiveAccount` for use in the UI for an already-active account
- * (including the bulk of the app), and code intended for that UI.
+ * In our legacy model where the global state is all about the active
+ * account (pre-#5006), this is a lot like the identity function.  Use this
+ * function where even in a multi-account post-#5006 model, the input will
+ * be the global state.
+ *
+ * In particular, always use this function (rather than simply casting) in
+ * early startup, onboarding, account-switch, or other times where there may
+ * be no active account.
  */
-export const tryGetActiveAccount = (state: GlobalState): Account | void => {
+export const tryGetActiveAccountState = (state: GlobalState): PerAccountState | void => {
   const accounts = getAccounts(state);
-  return accounts && accounts.length > 0 ? accounts[0] : undefined;
+  return accounts && accounts.length > 0 ? state : undefined;
 };
 
 /**
- * The account currently foregrounded in the UI; throws if none.
+ * The `Account` object for this account.
  *
- * For use in all the normal-use screens of the app, which assume there is
- * an active account.
- *
- * See `tryGetActiveAccount` for use where there might not be an active account.
+ * "This account" meaning the one this per-account state corresponds to.
  */
-export const getActiveAccount = (state: GlobalState): Account => {
-  const account = tryGetActiveAccount(state);
-  if (account === undefined) {
-    throw new Error('No account found');
-  }
-  return account;
+export const getAccount = (state: PerAccountState): Account => {
+  // TODO(#5006): This is the key place we assume a PerAccountState is
+  //   secretly a GlobalState.  We'll put the active `Account` somewhere
+  //   better and then fix that.
+  //   We're also assuming that the intended account is the active one.
+  const globalState = assumeSecretlyGlobalState(state);
+  const accounts = globalState.accounts;
+  invariant(accounts.length > 0, 'getAccount: must have account');
+  return accounts[0];
 };
 
-/** The realm of the active account; throws if none. */
-export const getCurrentRealm = (state: GlobalState) => getActiveAccount(state).realm;
+/** The realm URL for this account. */
+export const getRealmUrl = (state: PerAccountState): URL => getAccount(state).realm;
 
 /**
- * The auth object for the active account, even if not logged in; throws if none.
+ * The auth object for this account, if logged in; else undefined.
  *
- * For use in authentication flows, or other places that operate on an
- * active account which may not be logged in.
- *
- * See:
- *  * `tryGetAuth` for the meaning of "active" and "logged in".
- *  * `tryGetAuth` again, for use where there might not be an active account.
- *  * `getAuth` for use in the bulk of the app.
- */
-export const getPartialAuth: Selector<Auth> = createSelector(
-  getActiveAccount,
-  account => authOfAccount(account),
-);
-
-/**
- * The auth object for the active, logged-in account, or undefined if none.
- *
- * The "active" account is the one currently foregrounded in the UI, if any.
- * The active account is "logged-in" if we have an API key for it.
+ * The account is "logged in" if we have an API key for it.
  *
  * This is for use in early startup, onboarding, account-switch,
- * authentication flows, or other times where there may be no active account
- * or it may not be logged in.
+ * authentication flows, or other times where the given account may not be
+ * logged in.
  *
  * See:
  *  * `getAuth` for use in the bulk of the app, operating on a logged-in
- *    active account.
- *  * `getPartialAuth` for use in authentication flows, where there is an
- *    active account but it may not be logged in.
+ *    account.
  */
-export const tryGetAuth: Selector<Auth | void> = createSelector(
-  tryGetActiveAccount,
-  account => {
-    if (!account || account.apiKey === '') {
-      return undefined;
-    }
-    return authOfAccount(account);
-  },
-);
+export const tryGetAuth: Selector<Auth | void> = createSelector(getAccount, account => {
+  if (account.apiKey === '') {
+    return undefined;
+  }
+  return authOfAccount(account);
+});
 
 /**
  * True just if there is an active, logged-in account.
  *
- * See `tryGetAuth` for the meaning of "active, logged-in".
+ * See:
+ *  * `tryGetActiveAccountState` for the meaning of "active".
+ *  * `tryGetAuth` for the meaning of "logged in".
  */
-export const hasAuth = (state: GlobalState): boolean => !!tryGetAuth(state);
+export const getHasAuth = (globalState: GlobalState): boolean => {
+  const state = tryGetActiveAccountState(globalState);
+  return !!state && !!tryGetAuth(state);
+};
 
 /**
- * The auth object for the active, logged-in account; throws if none.
+ * The auth object for this account, if logged in; else throws.
  *
  * For use in all the normal-use screens and codepaths of the app, which
- * assume there is an active, logged-in account.
+ * assume the specified account is logged in.
  *
  * See:
- *  * `tryGetAuth` for the meaning of "active, logged-in".
- *  * `tryGetAuth` again, for use where there might not be such an account.
+ *  * `tryGetAuth` for the meaning of "logged in".
+ *  * `tryGetAuth` again, for use where the account might not be logged in.
  */
-export const getAuth = (state: GlobalState): Auth => {
+export const getAuth = (state: PerAccountState): Auth => {
   const auth = tryGetAuth(state);
   if (auth === undefined) {
     throw new Error('Active account not logged in');
@@ -140,22 +140,20 @@ export const getAuth = (state: GlobalState): Auth => {
 };
 
 /**
- * The identity for the active, logged-in account; throws if none.
+ * The identity for this account, if logged in; throws if not logged in.
  *
  * See `getAuth` and `tryGetAuth` for discussion.
  */
-export const getIdentity: Selector<Identity> = createSelector(
-  getAuth,
-  auth => identityOfAuth(auth),
+// TODO why should this care if the account is logged in?
+export const getIdentity: Selector<Identity> = createSelector(getAuth, auth =>
+  identityOfAuth(auth),
 );
 
 /**
- * The Zulip server version of the active account.
- *
- * Throws if no active account; undefined if server version not known.
+ * The Zulip server version for this account, or null if unknown.
  *
  * See the `zulipVersion` property of `Account` for details on how this
  * information is kept up to date.
  */
-export const getServerVersion = (state: GlobalState): ZulipVersion | null =>
-  getActiveAccount(state).zulipVersion;
+export const getServerVersion = (state: PerAccountState): ZulipVersion | null =>
+  getAccount(state).zulipVersion;

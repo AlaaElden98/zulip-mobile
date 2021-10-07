@@ -1,5 +1,6 @@
 /* @flow strict-local */
 import React from 'react';
+import type { Node } from 'react';
 import { Platform } from 'react-native';
 import {
   createStackNavigator,
@@ -9,7 +10,7 @@ import {
 
 import type { RouteParamsOf } from '../react-navigation';
 import { useSelector } from '../react-redux';
-import { hasAuth as getHasAuth, getAccounts } from '../selectors';
+import { getHasAuth, getAccounts } from '../selectors';
 import getInitialRouteInfo from './getInitialRouteInfo';
 import type { GlobalParamList } from './globalTypes';
 import AccountPickScreen from '../account/AccountPickScreen';
@@ -42,6 +43,7 @@ import EmojiPickerScreen from '../emoji/EmojiPickerScreen';
 import LegalScreen from '../settings/LegalScreen';
 import UserStatusScreen from '../user-status/UserStatusScreen';
 import SharingScreen from '../sharing/SharingScreen';
+import { useHaveServerDataGate } from '../withHaveServerDataGate';
 
 export type AppNavigatorParamList = {|
   'account-pick': RouteParamsOf<typeof AccountPickScreen>,
@@ -84,7 +86,7 @@ const Stack = createStackNavigator<GlobalParamList, AppNavigatorParamList, AppNa
 
 type Props = $ReadOnly<{||}>;
 
-export default function AppNavigator(props: Props) {
+export default function AppNavigator(props: Props): Node {
   const hasAuth = useSelector(getHasAuth);
   const accounts = useSelector(getAccounts);
 
@@ -104,39 +106,55 @@ export default function AppNavigator(props: Props) {
         }),
       }}
     >
+      {/* These screens expect server data in order to function normally. */}
+      <Stack.Screen
+        name="account-details"
+        component={useHaveServerDataGate(AccountDetailsScreen)}
+      />
+      <Stack.Screen name="group-details" component={useHaveServerDataGate(GroupDetailsScreen)} />
+      <Stack.Screen name="chat" component={useHaveServerDataGate(ChatScreen)} />
+      <Stack.Screen name="emoji-picker" component={useHaveServerDataGate(EmojiPickerScreen)} />
+      <Stack.Screen name="main-tabs" component={useHaveServerDataGate(MainTabsScreen)} />
+      <Stack.Screen
+        name="message-reactions"
+        component={useHaveServerDataGate(MessageReactionsScreen)}
+      />
+      <Stack.Screen
+        name="search-messages"
+        component={useHaveServerDataGate(SearchMessagesScreen)}
+      />
+      <Stack.Screen name="users" component={useHaveServerDataGate(UsersScreen)} />
+      <Stack.Screen name="language" component={useHaveServerDataGate(LanguageScreen)} />
+      <Stack.Screen name="lightbox" component={useHaveServerDataGate(LightboxScreen)} />
+      <Stack.Screen name="create-group" component={useHaveServerDataGate(CreateGroupScreen)} />
+      <Stack.Screen name="invite-users" component={useHaveServerDataGate(InviteUsersScreen)} />
+      <Stack.Screen name="diagnostics" component={useHaveServerDataGate(DiagnosticsScreen)} />
+      <Stack.Screen name="variables" component={useHaveServerDataGate(VariablesScreen)} />
+      <Stack.Screen name="timing" component={useHaveServerDataGate(TimingScreen)} />
+      <Stack.Screen name="storage" component={useHaveServerDataGate(StorageScreen)} />
+      <Stack.Screen name="debug" component={useHaveServerDataGate(DebugScreen)} />
+      <Stack.Screen
+        name="stream-settings"
+        component={useHaveServerDataGate(StreamSettingsScreen)}
+      />
+      <Stack.Screen name="edit-stream" component={useHaveServerDataGate(EditStreamScreen)} />
+      <Stack.Screen name="create-stream" component={useHaveServerDataGate(CreateStreamScreen)} />
+      <Stack.Screen name="topic-list" component={useHaveServerDataGate(TopicListScreen)} />
+      <Stack.Screen name="notifications" component={useHaveServerDataGate(NotificationsScreen)} />
+      <Stack.Screen name="legal" component={useHaveServerDataGate(LegalScreen)} />
+      <Stack.Screen name="user-status" component={useHaveServerDataGate(UserStatusScreen)} />
+
+      {/* These screens do not expect server data in order to function
+          normally. */}
       <Stack.Screen name="account-pick" component={AccountPickScreen} />
-      <Stack.Screen name="account-details" component={AccountDetailsScreen} />
-      <Stack.Screen name="group-details" component={GroupDetailsScreen} />
       <Stack.Screen name="auth" component={AuthScreen} />
-      <Stack.Screen name="chat" component={ChatScreen} />
       <Stack.Screen name="dev-auth" component={DevAuthScreen} />
-      <Stack.Screen name="emoji-picker" component={EmojiPickerScreen} />
-      <Stack.Screen name="main-tabs" component={MainTabsScreen} />
-      <Stack.Screen name="message-reactions" component={MessageReactionsScreen} />
       <Stack.Screen name="password-auth" component={PasswordAuthScreen} />
       <Stack.Screen
         name="realm-input"
         component={RealmInputScreen}
         initialParams={initialRouteName === 'realm-input' ? initialRouteParams : undefined}
       />
-      <Stack.Screen name="search-messages" component={SearchMessagesScreen} />
-      <Stack.Screen name="users" component={UsersScreen} />
-      <Stack.Screen name="language" component={LanguageScreen} />
-      <Stack.Screen name="lightbox" component={LightboxScreen} />
-      <Stack.Screen name="create-group" component={CreateGroupScreen} />
-      <Stack.Screen name="invite-users" component={InviteUsersScreen} />
-      <Stack.Screen name="diagnostics" component={DiagnosticsScreen} />
-      <Stack.Screen name="variables" component={VariablesScreen} />
-      <Stack.Screen name="timing" component={TimingScreen} />
-      <Stack.Screen name="storage" component={StorageScreen} />
-      <Stack.Screen name="debug" component={DebugScreen} />
-      <Stack.Screen name="stream-settings" component={StreamSettingsScreen} />
-      <Stack.Screen name="edit-stream" component={EditStreamScreen} />
-      <Stack.Screen name="create-stream" component={CreateStreamScreen} />
-      <Stack.Screen name="topic-list" component={TopicListScreen} />
-      <Stack.Screen name="notifications" component={NotificationsScreen} />
-      <Stack.Screen name="legal" component={LegalScreen} />
-      <Stack.Screen name="user-status" component={UserStatusScreen} />
       <Stack.Screen name="sharing" component={SharingScreen} />
     </Stack.Navigator>
   );

@@ -1,8 +1,11 @@
 /* @flow strict-local */
 
 import React from 'react';
+import type { Node } from 'react';
 import { View } from 'react-native';
 
+import { useSelector } from '../react-redux';
+import { getMutedUsers } from '../selectors';
 import type { UserId } from '../types';
 import * as NavigationService from '../nav/NavigationService';
 import styles, { createStyleSheet } from '../styles';
@@ -19,8 +22,10 @@ const componentStyles = createStyleSheet({
   },
 });
 
-export default function TitleGroup(props: Props) {
+export default function TitleGroup(props: Props): Node {
   const { userIds } = props;
+  const mutedUsers = useSelector(getMutedUsers);
+
   return (
     <View style={styles.navWrapper}>
       {userIds.map(userId => (
@@ -31,6 +36,7 @@ export default function TitleGroup(props: Props) {
             }}
             size={32}
             userId={userId}
+            isMuted={mutedUsers.has(userId)}
           />
         </View>
       ))}

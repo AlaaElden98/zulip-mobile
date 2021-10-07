@@ -15,14 +15,15 @@ import InboundEventLogger from './InboundEventLogger';
 import sendMessage from './sendMessage';
 import rewriteHtml from './rewriteHtml';
 import { toggleSpoiler } from './spoilers';
+import { ensureUnreachable } from '../../generics';
 
 /*
  * Supported platforms:
  *
  * * (When updating these, be sure to update tools/generate-webview-js too.)
  *
- * * We support iOS 11.  So this code needs to work on Mobile Safari 11.
- *   Graceful degradation is acceptable below iOS 13 / Mobile Safari 13.
+ * * We support iOS 12.  So this code needs to work on Mobile Safari 12.
+ *   Graceful degradation is acceptable below iOS 14 / Mobile Safari 14.
  *
  * * For Android, core functionality needs to work on Chrome 44.
  *   Graceful degradation is acceptable below Chrome 74.
@@ -34,10 +35,6 @@ import { toggleSpoiler } from './spoilers';
  *     the large majority of Android users have a fully-updated Chrome --
  *     more recent than the Safari on most iOS devices.)
  *
- *   * Below Chrome 44, it's possible (but rare) for a user to be on a
- *     version as old as Chrome 37, which shipped with Android 5 Lollipop.
- *     We sometimes fix issues affecting those versions, only when trivial.
- *
  * * See docs/architecture/platform-versions.md for data and discussion
  *   about our version-support strategy.
  */
@@ -48,6 +45,20 @@ import { toggleSpoiler } from './spoilers';
  * Provided by the template in `script.js`.
  */
 declare var platformOS: string;
+
+/**
+ * The value of `process.env.NODE_ENV === 'development'` in RN-land.
+ *
+ * Provided by the template in `script.js`.
+ */
+declare var isDevelopment: string;
+
+/**
+ * used to control behavior based on debug settings.
+ * defined in `handleInitialLoad`.
+ * declared globally so as to use across functions.
+ */
+declare var doNotMarkMessagesAsRead: boolean;
 
 /* eslint-disable no-extend-native */
 
@@ -117,7 +128,7 @@ const escapeHtml = (text: string): string => {
 };
 
 window.onerror = (message: string, source: string, line: number, column: number, error: Error) => {
-  if (window.enableWebViewErrorDisplay) {
+  if (isDevelopment) {
     // In development, show a detailed error banner for debugging.
     const elementJsError = document.getElementById('js-error-detailed');
     if (elementJsError) {
@@ -234,30 +245,31 @@ window.addEventListener('resize', event => {
  */
 
 /**
- * Returns a "message-peer" element visible mid-screen, if any.
+ * Returns a "message-list element" visible mid-screen, if any.
  *
- * A "message-peer" element is a message or one of their siblings that get
+ * A "message-list element" is a message or one of their siblings that get
  * laid out among them: e.g. a recipient bar or date separator, but not an
  * absolutely-positioned overlay.
  *
  * If the middle of the screen is just blank, returns null.
  */
-function midMessagePeer(top: number, bottom: number): ?Element {
+function midMessageListElement(top: number, bottom: number): ?Element {
   // The assumption we depend on: any random widgets we draw that aren't
-  // part of a message-peer are drawn *over* the message-peers, not under.
+  // part of a message-list element are drawn *over* the message-list
+  // elements, not under.
   //
   // By spec, the elements returned by Document#elementsFromPoint are in
   // paint order, topmost (and inmost) first.  By our assumption, that means
   // the sequence is:
   //   [ ...(random widgets, if any),
-  //     ...(descendants of message-peer), message-peer,
+  //     ...(descendants of message-list element), message-list element,
   //     body, html ]
   //
   // On ancient browsers (missing Document#elementsFromPoint), we make a
   // stronger assumption: at the vertical middle of the screen, we don't
-  // draw *any* widgets over a message-peer.  (I.e., we only do so near the
-  // top and bottom: like floating recipient bars, the error banner, and the
-  // scroll-bottom button.)
+  // draw *any* widgets over a message-list element.  (I.e., we only do so
+  // near the top and bottom: like floating recipient bars, the error
+  // banner, and the scroll-bottom button.)
 
   const midY = (bottom + top) / 2;
 
@@ -275,6 +287,16 @@ function midMessagePeer(top: number, bottom: number): ?Element {
   return midElements[midElements.length - 3];
 }
 
+/**
+ * Find a message element at or near the given element.
+ *
+ * The given element should be a "message-list element"; see
+ * `midMessageListElement` for discussion.
+ *
+ * If the given element is a message, returns that element.  Otherwise,
+ * returns the message that comes just after or just before it, depending on
+ * the value of `step`.
+ */
 function walkToMessage(
   start: ?Element,
   step: 'nextElementSibling' | 'previousElementSibling',
@@ -287,20 +309,66 @@ function walkToMessage(
   return element;
 }
 
+/** The first message element in the document. */
 function firstMessage(): ?Element {
   return walkToMessage(documentBody.firstElementChild, 'nextElementSibling');
 }
 
+/** The last message element in the document. */
 function lastMessage(): ?Element {
   return walkToMessage(documentBody.lastElementChild, 'previousElementSibling');
 }
 
-/** The minimum height (in px) to see of a message to call it visible. */
-const minOverlap = 20;
+/** The message before the given message, if any. */
+function previousMessage(start: Element): ?Element {
+  return walkToMessage(start.previousElementSibling, 'previousElementSibling');
+}
 
+/** The message after the given message, if any. */
+function nextMessage(start: Element): ?Element {
+  return walkToMessage(start.nextElementSibling, 'nextElementSibling');
+}
+
+/**
+ * An element is visible if any part of it is visible on screen.
+ *
+ * @param top The top of the screen (typically 0)
+ * @param bottom The bottom of the screen (typically body.clientHeight)
+ */
 function isVisible(element: Element, top: number, bottom: number): boolean {
   const rect = element.getBoundingClientRect();
-  return top + minOverlap < rect.bottom && rect.top + minOverlap < bottom;
+  return top < rect.bottom && rect.top < bottom;
+}
+
+/**
+ * The number of pixels of the message that are allowed to be scrolled off
+ * the bottom of the screen when we mark the message as "read".
+ */
+// Picked based on the bottom padding of messages in CSS. This doesn't work
+// so great in cases where messages have the "edited" badge or reaction emojis,
+// since the user needs to scorll to the bottom of the reaction emoji/edited
+// badge section for the message to be "read", but it's more important for the
+// single-line message case to not get inadvertently read than it is for
+// messages to get marked read exactly when the bottom of the text of the
+// message comes onto the screen. In the future, we may want more complicated
+// behaviour here, but this should be fine for now.
+const messageReadSlop = 16;
+
+/**
+ * A visible message is read when its bottom isn't too far down out of view.
+ *
+ * See `messageReadSlop` for specifically how far the bottom might be. The
+ * idea is that a message becomes read when the bottom of its content
+ * scrolls into view, excluding the padding between messages.
+ *
+ * This function doesn't check that the message is visible; it probably
+ * makes sense to call only when `isVisible` is already known to be true.
+ *
+ * @param top The top of the screen (typically 0)
+ * @param bottom The bottom of the screen (typically body.clientHeight)
+ */
+function isRead(element: Element, top: number, bottom: number): boolean {
+  return bottom + messageReadSlop >= element.getBoundingClientRect().bottom;
 }
 
 /** Returns some message element which is visible, if any. */
@@ -308,19 +376,41 @@ function someVisibleMessage(top: number, bottom: number): ?Element {
   function checkVisible(candidate: ?Element): ?Element {
     return candidate && isVisible(candidate, top, bottom) ? candidate : null;
   }
-  // Algorithm: if some message-peer is visible, then either the message
-  // just before or after it should be visible.  If not, we must be at one
-  // end of the message list, meaning either the first or last message
-  // (or both) should be visible.
-  const midPeer = midMessagePeer(top, bottom);
+  // Algorithm: if some message-list element is visible, then either the
+  // message just before or after it should be visible.  If not, we must be
+  // at one end of the message list, meaning either the first or last
+  // message (or both) should be visible.
+  const midElement = midMessageListElement(top, bottom);
   return (
-    checkVisible(walkToMessage(midPeer, 'previousElementSibling'))
-    || checkVisible(walkToMessage(midPeer, 'nextElementSibling'))
+    checkVisible(walkToMessage(midElement, 'previousElementSibling'))
+    || checkVisible(walkToMessage(midElement, 'nextElementSibling'))
     || checkVisible(firstMessage())
     || checkVisible(lastMessage())
   );
 }
 
+/** Returns some message element which is both visible and read, if any. */
+function someVisibleReadMessage(top: number, bottom: number): ?Element {
+  function checkReadAndVisible(candidate: ?Element): ?Element {
+    return candidate && isRead(candidate, top, bottom) && isVisible(candidate, top, bottom)
+      ? candidate
+      : null;
+  }
+
+  // Algorithm: If there's a visible message that isn't read, that means
+  // it's partway off the bottom of the screen. Therefore, either:
+  // * the message above it will be visible and read, or
+  // * there are no visible read messages.
+  const visible = someVisibleMessage(top, bottom);
+  if (!visible) {
+    return visible;
+  }
+  return checkReadAndVisible(visible) || checkReadAndVisible(previousMessage(visible));
+}
+
+/**
+ * The Zulip message ID of the given message element; throw if not a message.
+ */
 function idFromMessage(element: Element): number {
   const idStr = element.getAttribute('data-msg-id');
   if (idStr === null || idStr === undefined) {
@@ -330,23 +420,23 @@ function idFromMessage(element: Element): number {
 }
 
 /**
- * Returns the IDs of the first and last visible messages, if any.
+ * Returns the IDs of the first and last visible read messages, if any.
  *
- * If no messages are visible, the return value has first > last.
+ * If no messages are both visible and read, the return value has first > last.
  */
-function visibleMessageIds(): {| first: number, last: number |} {
-  // Algorithm: We find some message that's visible; then walk both up and
-  // down from there to find all the visible messages.
+function visibleReadMessageIds(): {| first: number, last: number |} {
+  // Algorithm: We find some message that's both visible and read; then walk
+  // both up and down from there to find all the visible read messages.
 
   const top = 0;
   const bottom = viewportHeight;
   let first = Number.MAX_SAFE_INTEGER;
   let last = 0;
 
-  // Walk through visible elements, observing message IDs.
+  // Walk through visible-and-read elements, observing message IDs.
   function walkElements(start: ?Element, step: 'nextElementSibling' | 'previousElementSibling') {
     let element = start;
-    while (element && isVisible(element, top, bottom)) {
+    while (element && isVisible(element, top, bottom) && isRead(element, top, bottom)) {
       if (element.classList.contains('message')) {
         const id = idFromMessage(element);
         first = Math.min(first, id);
@@ -357,14 +447,14 @@ function visibleMessageIds(): {| first: number, last: number |} {
     }
   }
 
-  const start = someVisibleMessage(top, bottom);
+  const start = someVisibleReadMessage(top, bottom);
   walkElements(start, 'nextElementSibling');
   walkElements(start, 'previousElementSibling');
 
   return { first, last };
 }
 
-/** DEPRECATED */
+/** DEPRECATED - consider using `node.closest('.message')` instead. */
 const getMessageNode = (node: ?Node): ?Node => {
   let curNode = node;
   while (curNode && curNode.parentNode && curNode.parentNode !== documentBody) {
@@ -404,11 +494,14 @@ const setMessagesReadAttributes = rangeHull => {
  *
  */
 
-/** The range of message IDs visible whenever we last checked. */
-let prevMessageRange = visibleMessageIds();
+/**
+ * The range of message IDs that were both visible and read whenever we last
+ * checked.
+ */
+let prevMessageRange = visibleReadMessageIds();
 
 const sendScrollMessage = () => {
-  const messageRange = visibleMessageIds();
+  const messageRange = visibleReadMessageIds();
   // rangeHull is the convex hull of the previous range and the new one.
   // When the user is actively scrolling, the browser gives us scroll events
   // only occasionally, so we use this to interpolate scrolling past the
@@ -426,8 +519,19 @@ const sendScrollMessage = () => {
     startMessageId: rangeHull.first,
     endMessageId: rangeHull.last,
   });
-  setMessagesReadAttributes(rangeHull);
-  prevMessageRange = messageRange;
+  if (!doNotMarkMessagesAsRead) {
+    setMessagesReadAttributes(rangeHull);
+  }
+  // If there are no visible + read messages (for instance, the entire screen
+  // is taken up by a single large message), then we don't want to update
+  // prevMessageRange.  This way, if the user scrolled past some messages to
+  // get here, then even though `messageRange` was empty this time and so we
+  // didn't mark any messages as read just now, we'll include those in
+  // `rangeHull` the next time the user scrolls and so we'll mark them as read
+  // then.
+  if (messageRange.first < messageRange.last) {
+    prevMessageRange = messageRange;
+  }
 };
 
 // If the message list is too short to scroll, fake a scroll event
@@ -551,19 +655,25 @@ const runAfterLayout = (fn: () => void) => {
 };
 
 const handleInboundEventContent = (uevent: WebViewInboundEventContent) => {
+  const { updateStrategy } = uevent;
   let target: ScrollTarget;
-  if (uevent.updateStrategy === 'replace') {
-    target = { type: 'none' };
-  } else if (uevent.updateStrategy === 'scroll-to-anchor') {
-    target = { type: 'anchor', messageId: uevent.scrollMessageId };
-  } else if (
-    uevent.updateStrategy === 'scroll-to-bottom-if-near-bottom'
-    && isNearBottom() /* align */
-  ) {
-    target = { type: 'bottom' };
-  } else {
-    // including 'default' and 'preserve-position'
-    target = findPreserveTarget();
+  switch (updateStrategy) {
+    case 'replace':
+      target = { type: 'none' };
+      break;
+    case 'scroll-to-anchor':
+      target = { type: 'anchor', messageId: uevent.scrollMessageId };
+      break;
+    case 'scroll-to-bottom-if-near-bottom':
+      target = isNearBottom() ? { type: 'bottom' } : findPreserveTarget();
+      break;
+    case 'preserve-position':
+      target = findPreserveTarget();
+      break;
+    default:
+      ensureUnreachable(updateStrategy);
+      target = findPreserveTarget();
+      break;
   }
 
   documentBody.innerHTML = uevent.content;
@@ -628,11 +738,25 @@ const handleInboundEventTyping = (uevent: WebViewInboundEventTyping) => {
   }
 };
 
+let readyRetryInterval: IntervalID | void = undefined;
+
+const signalReadyForEvents = () => {
+  sendMessage({ type: 'ready' });
+
+  // Keep retrying sending the ready event, in case the first one is sent while
+  // the queue isn't ready. While this isn't something I've observed in testing,
+  // we've previously had bugs that were caused by this (for instance, #3078)
+  readyRetryInterval = setInterval(() => {
+    sendMessage({ type: 'ready' });
+  }, 100);
+};
+
 /**
- * Echo back the handshake message, confirming the channel is ready.
+ * Stop resending the handshake message once we confirm that the channel is
+ * ready.
  */
 const handleInboundEventReady = (uevent: WebViewInboundEventReady) => {
-  sendMessage({ type: 'ready' });
+  clearInterval(readyRetryInterval);
 };
 
 /**
@@ -686,6 +810,18 @@ const handleMessageEvent: MessageEventListener = e => {
  * Handling user touches
  *
  */
+
+/**
+ * If the given message is muted, reveal it and all consecutive following
+ * messages from the same user.
+ */
+const revealMutedMessages = (message: Element) => {
+  let messageNode = message;
+  do {
+    messageNode.setAttribute('data-mute-state', 'shown');
+    messageNode = nextMessage(messageNode);
+  } while (messageNode && messageNode.classList.contains('message-brief'));
+};
 
 const requireAttribute = (e: Element, name: string): string => {
   const value = e.getAttribute(name);
@@ -802,6 +938,27 @@ documentBody.addEventListener('click', (e: MouseEvent) => {
     return;
   }
 
+  if (target.matches('.poll-vote')) {
+    const messageElement = target.closest('.message');
+    if (!messageElement) {
+      throw new Error('Message element not found');
+    }
+    // This duplicates some logic from PollData.handle.vote.outbound in
+    // @zulip/shared/js/poll_data.js, but it's much simpler to just duplicate
+    // it than it is to thread a callback all the way over here.
+    const current_vote = requireAttribute(target, 'data-voted') === 'true';
+    const vote = current_vote ? -1 : 1;
+    sendMessage({
+      type: 'vote',
+      messageId: requireNumericAttribute(messageElement, 'data-msg-id'),
+      key: requireAttribute(target, 'data-key'),
+      vote,
+    });
+    target.setAttribute('data-voted', (!current_vote).toString());
+    target.innerText = (parseInt(target.innerText, 10) + vote).toString();
+    return;
+  }
+
   if (target.matches('time')) {
     const originalText = requireAttribute(target, 'original-text');
     sendMessage({
@@ -841,9 +998,27 @@ const handleLongPress = (target: Element) => {
     return;
   }
 
+  // Prettier bug on nested ternary
+  /* prettier-ignore */
+  const targetType = target.matches('.header')
+    ? 'header'
+    : target.matches('a')
+      ? 'link'
+      : 'message';
+  const messageNode = target.closest('.message');
+
+  if (
+    targetType === 'message'
+    && messageNode
+    && messageNode.getAttribute('data-mute-state') === 'hidden'
+  ) {
+    revealMutedMessages(messageNode);
+    return;
+  }
+
   sendMessage({
     type: 'longPress',
-    target: target.matches('.header') ? 'header' : target.matches('a') ? 'link' : 'message',
+    target: targetType,
     messageId: getMessageIdFromNode(target),
     href: target.matches('a') ? requireAttribute(target, 'href') : null,
   });
@@ -889,3 +1064,9 @@ documentBody.addEventListener('touchmove', (e: TouchEvent) => {
 documentBody.addEventListener('drag', (e: DragEvent) => {
   clearTimeout(longPressTimeout);
 });
+
+// It's possible we could call this earlier, and would see some performance
+// benifit from doing so, since js.js takes about 16ms to run on a Pixel 3a.
+// However, I don't see that as being worth the possible bugs from things
+// loading too early.
+signalReadyForEvents();

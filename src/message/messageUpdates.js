@@ -1,4 +1,5 @@
 /* @flow strict-local */
+// $FlowFixMe[untyped-import]
 import isEqual from 'lodash.isequal';
 import type { Narrow } from '../types';
 
@@ -10,83 +11,53 @@ type Props = $ReadOnly<{
   ...
 }>;
 
-type TransitionProps = {|
-  sameNarrow: boolean,
-  noMessages: boolean,
-  noNewMessages: boolean,
-  allNewMessages: boolean,
-  onlyOneNewMessage: boolean,
-  oldMessagesAdded: boolean,
-  newMessagesAdded: boolean,
-  messagesReplaced: boolean,
-|};
-
 export type UpdateStrategy =
-  | 'default'
   | 'replace'
   | 'preserve-position'
   | 'scroll-to-anchor'
   | 'scroll-to-bottom-if-near-bottom';
 
-export const getMessageTransitionProps = (prevProps: Props, nextProps: Props): TransitionProps => {
-  const sameNarrow = isEqual(prevProps.narrow, nextProps.narrow);
-  const noMessages = nextProps.messages.length === 0;
-  const noNewMessages = sameNarrow && prevProps.messages.length === nextProps.messages.length;
-  const allNewMessages =
-    sameNarrow && prevProps.messages.length === 0 && nextProps.messages.length > 0;
-  const oldMessagesAdded =
-    sameNarrow
-    && prevProps.messages.length > 0
-    && nextProps.messages.length > 0
-    && prevProps.messages[0].id > nextProps.messages[0].id;
-  const newMessagesAdded =
-    sameNarrow
-    && prevProps.messages.length > 0
-    && nextProps.messages.length > 0
-    && prevProps.messages[prevProps.messages.length - 1].id
-      < nextProps.messages[nextProps.messages.length - 1].id;
-  const onlyOneNewMessage =
-    sameNarrow
-    && prevProps.messages.length > 0
-    && nextProps.messages.length > 1
-    && prevProps.messages[prevProps.messages.length - 1].id
-      === nextProps.messages[nextProps.messages.length - 2].id;
-  const messagesReplaced =
-    sameNarrow
-    && prevProps.messages.length > 0
-    && nextProps.messages.length > 0
-    && prevProps.messages[prevProps.messages.length - 1].id < nextProps.messages[0].id;
+export const getMessageUpdateStrategy = (prevProps: Props, nextProps: Props): UpdateStrategy => {
+  const prevMessages = prevProps.messages;
+  const nextMessages = nextProps.messages;
 
-  return {
-    sameNarrow,
-    noMessages,
-    noNewMessages,
-    allNewMessages,
-    onlyOneNewMessage,
-    oldMessagesAdded,
-    newMessagesAdded,
-    messagesReplaced,
-  };
-};
-
-export const getMessageUpdateStrategy = (transitionProps: TransitionProps): UpdateStrategy => {
-  if (transitionProps.noMessages) {
+  if (nextMessages.length === 0) {
+    // No messages.
     return 'replace';
-  } else if (
-    !transitionProps.sameNarrow
-    || transitionProps.allNewMessages
-    || transitionProps.messagesReplaced
-  ) {
+  }
+
+  if (!isEqual(prevProps.narrow, nextProps.narrow)) {
+    // Different narrow.
     return 'scroll-to-anchor';
-  } else if (
-    transitionProps.noNewMessages
-    || transitionProps.oldMessagesAdded
-    || (transitionProps.newMessagesAdded && !transitionProps.onlyOneNewMessage)
-  ) {
+  }
+
+  if (prevMessages.length === 0) {
+    // All new messages.
+    return 'scroll-to-anchor';
+  }
+
+  if (prevMessages[prevMessages.length - 1].id < nextMessages[0].id) {
+    // Messages replaced.
+    return 'scroll-to-anchor';
+  }
+
+  if (prevMessages.length === nextMessages.length) {
+    // No new messages.
     return 'preserve-position';
-  } else if (transitionProps.onlyOneNewMessage) {
+  }
+
+  if (prevMessages[0].id > nextMessages[0].id) {
+    // Old messages added.
+    return 'preserve-position';
+  }
+
+  if (
+    nextMessages.length > 1
+    && prevMessages[prevMessages.length - 1].id === nextMessages[nextMessages.length - 2].id
+  ) {
+    // Only one new message.
     return 'scroll-to-bottom-if-near-bottom';
   }
 
-  return 'default';
+  return 'preserve-position';
 };

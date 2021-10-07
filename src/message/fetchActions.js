@@ -1,9 +1,13 @@
 /* @flow strict-local */
-import type { Narrow, Dispatch, GetState, GlobalState, Message, Action, UserId } from '../types';
-import type { ApiResponseServerSettings } from '../api/settings/getServerSettings';
+import * as logging from '../utils/logging';
+import * as NavigationService from '../nav/NavigationService';
+import type { Narrow, GlobalState, Message, Action, ThunkAction, UserId } from '../types';
+import { ensureUnreachable } from '../types';
+import type { InitialFetchAbortReason } from '../actionTypes';
 import type { InitialData } from '../api/initialDataTypes';
 import * as api from '../api';
-import { isClientError } from '../api/apiErrors';
+import { ApiError, Server5xxError, NetworkError } from '../api/apiErrors';
+import { resetToAccountPicker, deadQueue } from '../actions';
 import {
   getAuth,
   getSession,
@@ -11,25 +15,29 @@ import {
   getLastMessageId,
   getCaughtUpForNarrow,
   getFetchingForNarrow,
+  getIsAdmin,
+  getIdentity,
 } from '../selectors';
 import config from '../config';
 import {
   INITIAL_FETCH_START,
   INITIAL_FETCH_COMPLETE,
+  INITIAL_FETCH_ABORT,
   MESSAGE_FETCH_START,
   MESSAGE_FETCH_ERROR,
   MESSAGE_FETCH_COMPLETE,
 } from '../actionConstants';
 import { FIRST_UNREAD_ANCHOR, LAST_MESSAGE_ANCHOR } from '../anchor';
-import { ALL_PRIVATE_NARROW, apiNarrowOfNarrow } from '../utils/narrow';
-import { BackoffMachine } from '../utils/async';
+import { showErrorAlert } from '../utils/info';
+import { ALL_PRIVATE_NARROW, apiNarrowOfNarrow, caseNarrow } from '../utils/narrow';
+import { BackoffMachine, promiseTimeout, TimeoutError } from '../utils/async';
 import { initNotifications } from '../notification/notificationActions';
 import { addToOutbox, sendOutbox } from '../outbox/outboxActions';
 import { realmInit } from '../realm/realmActions';
 import { startEventPolling } from '../events/eventActions';
 import { logout } from '../account/accountActions';
 import { ZulipVersion } from '../utils/zulipVersion';
-import { getAllUsersById, getOwnUserId } from '../users/userSelectors';
+import { getAllUsersById, getHaveServerData, getOwnUserId } from '../users/userSelectors';
 import { MIN_RECENTPMS_SERVER_VERSION } from '../pm-conversations/pmConversationsModel';
 
 const messageFetchStart = (narrow: Narrow, numBefore: number, numAfter: number): Action => ({
@@ -93,14 +101,20 @@ export const fetchMessages = (fetchArgs: {|
   anchor: number,
   numBefore: number,
   numAfter: number,
-|}) => async (dispatch: Dispatch, getState: GetState): Promise<Message[]> => {
+|}): ThunkAction<Promise<Message[]>> => async (dispatch, getState) => {
   dispatch(messageFetchStart(fetchArgs.narrow, fetchArgs.numBefore, fetchArgs.numAfter));
   try {
-    const { messages, found_newest, found_oldest } = await api.getMessages(getAuth(getState()), {
-      ...fetchArgs,
-      narrow: apiNarrowOfNarrow(fetchArgs.narrow, getAllUsersById(getState())),
-      useFirstUnread: fetchArgs.anchor === FIRST_UNREAD_ANCHOR, // TODO: don't use this; see #4203
-    });
+    const { messages, found_newest, found_oldest } =
+      // TODO: If `MESSAGE_FETCH_ERROR` isn't the right way to respond
+      // to a timeout, maybe make a new action.
+      // eslint-disable-next-line no-use-before-define
+      await tryFetch(() =>
+        api.getMessages(getAuth(getState()), {
+          ...fetchArgs,
+          narrow: apiNarrowOfNarrow(fetchArgs.narrow, getAllUsersById(getState())),
+          useFirstUnread: fetchArgs.anchor === FIRST_UNREAD_ANCHOR, // TODO: don't use this; see #4203
+        }),
+      );
     dispatch(
       messageFetchComplete({
         ...fetchArgs,
@@ -118,18 +132,37 @@ export const fetchMessages = (fetchArgs: {|
         error: e,
       }),
     );
+    logging.warn(e, {
+      message: 'Message-fetch error',
+
+      // Describe the narrow without sending sensitive data to Sentry.
+      narrow: caseNarrow(fetchArgs.narrow, {
+        stream: name => 'stream',
+        topic: (streamName, topic) => 'topic',
+        pm: ids => (ids.length > 1 ? 'pm (group)' : 'pm (1:1)'),
+        home: () => 'all',
+        starred: () => 'starred',
+        mentioned: () => 'mentioned',
+        allPrivate: () => 'all-pm',
+        search: query => 'search',
+      }),
+
+      anchor: fetchArgs.anchor,
+      numBefore: fetchArgs.numBefore,
+      numAfter: fetchArgs.numAfter,
+    });
     throw e;
   }
 };
 
-export const fetchOlder = (narrow: Narrow) => (dispatch: Dispatch, getState: GetState) => {
+export const fetchOlder = (narrow: Narrow): ThunkAction<void> => (dispatch, getState) => {
   const state = getState();
   const firstMessageId = getFirstMessageId(state, narrow);
   const caughtUp = getCaughtUpForNarrow(state, narrow);
   const fetching = getFetchingForNarrow(state, narrow);
-  const { needsInitialFetch } = getSession(state);
+  const { loading } = getSession(state);
 
-  if (!needsInitialFetch && !fetching.older && !caughtUp.older && firstMessageId !== undefined) {
+  if (!loading && !fetching.older && !caughtUp.older && firstMessageId !== undefined) {
     dispatch(
       fetchMessages({
         narrow,
@@ -141,14 +174,14 @@ export const fetchOlder = (narrow: Narrow) => (dispatch: Dispatch, getState: Get
   }
 };
 
-export const fetchNewer = (narrow: Narrow) => (dispatch: Dispatch, getState: GetState) => {
+export const fetchNewer = (narrow: Narrow): ThunkAction<void> => (dispatch, getState) => {
   const state = getState();
   const lastMessageId = getLastMessageId(state, narrow);
   const caughtUp = getCaughtUpForNarrow(state, narrow);
   const fetching = getFetchingForNarrow(state, narrow);
-  const { needsInitialFetch } = getSession(state);
+  const { loading } = getSession(state);
 
-  if (!needsInitialFetch && !fetching.newer && !caughtUp.newer && lastMessageId !== undefined) {
+  if (!loading && !fetching.newer && !caughtUp.newer && lastMessageId !== undefined) {
     dispatch(
       fetchMessages({
         narrow,
@@ -167,6 +200,65 @@ const initialFetchStart = (): Action => ({
 const initialFetchComplete = (): Action => ({
   type: INITIAL_FETCH_COMPLETE,
 });
+
+const initialFetchAbortPlain = (reason: InitialFetchAbortReason): Action => ({
+  type: INITIAL_FETCH_ABORT,
+  reason,
+});
+
+export const initialFetchAbort = (
+  reason: InitialFetchAbortReason,
+): ThunkAction<Promise<void>> => async (dispatch, getState) => {
+  dispatch(initialFetchAbortPlain(reason));
+  if (getHaveServerData(getState())) {
+    // Try again, forever if necessary; the user has an interactable UI and
+    // can look at stale data while waiting.
+    //
+    // Do so by lying that the server has told us our queue is invalid and
+    // we need a new one. Note that this must fire *after*
+    // `initialFetchAbortPlain()`, so that AppDataFetcher sees
+    // `needsInitialFetch` go from `false` to `true`. We don't call
+    // `doInitialFetch` directly here because that would go against
+    // `AppDataFetcher`'s implicit interface. (Also, `needsInitialFetch` is
+    // dubiously being read outside `AppDataFetcher`, in
+    // `fetchOlder`/`fetchNewer`, and we don't want to break something
+    // there.)
+    //
+    // TODO: Clean up all this brittle logic.
+    // TODO: Instead, let the retry be on-demand, with a banner.
+    dispatch(deadQueue()); // eslint-disable-line no-use-before-define
+  } else {
+    // Tell the user we've given up and let them try the same account or a
+    // different account from the account picker.
+    showErrorAlert(
+      // TODO: Set up these user-facing strings for translation once
+      // `initialFetchAbort`'s callers all have access to a `GetText`
+      // function. As of adding the strings, the initial fetch is dispatched
+      // from `AppDataFetcher` which isn't a descendant of
+      // `TranslationProvider`.
+      'Connection failed',
+      (() => {
+        const realmStr = getIdentity(getState()).realm.toString();
+        switch (reason) {
+          case 'server':
+            return getIsAdmin(getState())
+              ? `Could not connect to ${realmStr} because the server encountered an error. Please check the server logs.`
+              : `Could not connect to ${realmStr} because the server encountered an error. Please ask an admin to check the server logs.`;
+          case 'network':
+            return `The network request to ${realmStr} failed.`;
+          case 'timeout':
+            return `Gave up trying to connect to ${realmStr} after waiting too long.`;
+          case 'unexpected':
+            return `Unexpected error while trying to connect to ${realmStr}.`;
+          default:
+            ensureUnreachable(reason);
+            return '';
+        }
+      })(),
+    );
+    NavigationService.dispatch(resetToAccountPicker());
+  }
+};
 
 /** Private; exported only for tests. */
 export const isFetchNeededAtAnchor = (
@@ -204,7 +296,7 @@ export const isFetchNeededAtAnchor = (
 export const fetchMessagesInNarrow = (
   narrow: Narrow,
   anchor: number = FIRST_UNREAD_ANCHOR,
-) => async (dispatch: Dispatch, getState: GetState): Promise<Message[] | void> => {
+): ThunkAction<Promise<Message[] | void>> => async (dispatch, getState) => {
   if (!isFetchNeededAtAnchor(getState(), narrow, anchor)) {
     return undefined;
   }
@@ -229,7 +321,7 @@ export const fetchMessagesInNarrow = (
  * See `fetchMessagesInNarrow` for further background.
  */
 // TODO(server-2.1): Delete this.
-const fetchPrivateMessages = () => async (dispatch: Dispatch, getState: GetState) => {
+const fetchPrivateMessages = () => async (dispatch, getState) => {
   const auth = getAuth(getState());
   const { messages, found_newest, found_oldest } = await api.getMessages(auth, {
     narrow: apiNarrowOfNarrow(ALL_PRIVATE_NARROW, getAllUsersById(getState())),
@@ -252,31 +344,57 @@ const fetchPrivateMessages = () => async (dispatch: Dispatch, getState: GetState
 };
 
 /**
- * Calls an async function and if unsuccessful retries the call.
+ * Makes a request with a timeout. If asked, retries on
+ * server/network operational errors until success.
  *
- * If the function is an API call and the response has HTTP status code 4xx
- * the error is considered unrecoverable and the exception is rethrown, to be
- * handled further up in the call stack.
+ * Waits between retries with a backoff.
+ *
+ * Other, non-retryable errors (client errors and all unexpected errors)
+ * will always propagate to the caller to be handled.
+ *
+ * The timeout's length is `config.requestLongTimeoutMs` and it is absolute:
+ * it triggers after that time has elapsed no matter whether the time was
+ * spent waiting to hear back from one request, or retrying a request
+ * unsuccessfully many times. The time spent waiting in backoff is included
+ * in that.
  */
-export async function tryFetch<T>(func: () => Promise<T>): Promise<T> {
+export async function tryFetch<T>(
+  func: () => Promise<T>,
+  shouldRetry?: boolean = true,
+): Promise<T> {
   const backoffMachine = new BackoffMachine();
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    try {
-      return await func();
-    } catch (e) {
-      if (isClientError(e)) {
-        throw e;
-      }
-      await backoffMachine.wait();
-    }
-  }
 
-  // Without this, Flow 0.92.1 does not know this code is unreachable,
-  // and it incorrectly thinks Promise<undefined> could be returned,
-  // which is inconsistent with the stated Promise<T> return type.
-  // eslint-disable-next-line no-unreachable
-  throw new Error();
+  // TODO: Use AbortController instead of this stateful flag; #4170
+  let timerHasExpired = false;
+
+  try {
+    return await promiseTimeout(
+      (async () => {
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          if (timerHasExpired) {
+            // No one is listening for this Promise to settle, so stop
+            // doing more work.
+            throw new Error();
+          }
+          try {
+            return await func();
+          } catch (e) {
+            if (!(shouldRetry && (e instanceof Server5xxError || e instanceof NetworkError))) {
+              throw e;
+            }
+          }
+          await backoffMachine.wait();
+        }
+      })(),
+      config.requestLongTimeoutMs,
+    );
+  } catch (e) {
+    if (e instanceof TimeoutError) {
+      timerHasExpired = true;
+    }
+    throw e;
+  }
 }
 
 /**
@@ -286,7 +404,7 @@ export async function tryFetch<T>(func: () => Promise<T>): Promise<T> {
  * updates, calling its `/register` endpoint and starting an async loop to
  * poll for events.  For background on the Zulip event system and how we use
  * it, see docs from the client-side perspective:
- *   https://github.com/zulip/zulip-mobile/blob/master/docs/architecture/realtime.md
+ *   https://github.com/zulip/zulip-mobile/blob/main/docs/architecture/realtime.md
  * and a mainly server-side perspective:
  *   https://zulip.readthedocs.io/en/latest/subsystems/events-system.html
  *
@@ -300,18 +418,29 @@ export async function tryFetch<T>(func: () => Promise<T>): Promise<T> {
  * (`fetchOlder` and `fetchNewer`), and to grab search results
  * (`SearchMessagesScreen`).
  */
-export const doInitialFetch = () => async (dispatch: Dispatch, getState: GetState) => {
+export const doInitialFetch = (): ThunkAction<Promise<void>> => async (dispatch, getState) => {
   dispatch(initialFetchStart());
   const auth = getAuth(getState());
 
   let initData: InitialData;
-  let serverSettings: ApiResponseServerSettings;
+
+  const haveServerData = getHaveServerData(getState());
 
   try {
-    [initData, serverSettings] = await Promise.all([
-      tryFetch(() =>
+    initData = await tryFetch(
+      () =>
+        // Currently, no input we're giving `registerForEvents` is
+        // conditional on the server version / feature level. If we
+        // need to do that, make sure that data is up-to-date -- we've
+        // been using this `registerForEvents` call to update the
+        // feature level in Redux, which means the value in Redux will
+        // be from the *last* time it was run. That could be a long
+        // time ago, like from the previous app startup.
         api.registerForEvents(auth, {
+          // Event types not supported by the server are ignored; see
+          //   https://zulip.com/api/register-queue#parameter-fetch_event_types.
           fetch_event_types: config.serverDataOnStartup,
+
           apply_markdown: true,
           include_subscribers: false,
           client_gravatar: true,
@@ -321,21 +450,42 @@ export const doInitialFetch = () => async (dispatch: Dispatch, getState: GetStat
             user_avatar_url_field_optional: true,
           },
         }),
-      ),
-      tryFetch(() => api.getServerSettings(auth.realm)),
-    ]);
+      // We might have (potentially stale) server data already. If
+      // we do, we'll be showing some UI that lets the user see that
+      // data. If we don't, we'll be showing a full-screen loading
+      // indicator that prevents the user from doing anything useful
+      // -- if that's the case, don't bother retrying on 5xx errors,
+      // to save the user's time and patience. They can retry
+      // manually if they want.
+      haveServerData,
+    );
   } catch (e) {
-    // This should only happen on a 4xx HTTP status, which should only
-    // happen when `auth` is no longer valid.  No use retrying; just log out.
-    dispatch(logout());
+    if (e instanceof ApiError) {
+      // This should only happen when `auth` is no longer valid. No
+      // use retrying; just log out.
+      dispatch(logout());
+    } else if (e instanceof Server5xxError) {
+      dispatch(initialFetchAbort('server'));
+    } else if (e instanceof NetworkError) {
+      dispatch(initialFetchAbort('network'));
+    } else if (e instanceof TimeoutError) {
+      // We always want to abort if we've kept the user waiting an
+      // unreasonably long time.
+      dispatch(initialFetchAbort('timeout'));
+    } else {
+      dispatch(initialFetchAbort('unexpected'));
+      logging.warn(e, {
+        message: 'Unexpected error during /register.',
+      });
+    }
     return;
   }
 
-  const serverVersion = new ZulipVersion(serverSettings.zulip_version);
-  dispatch(realmInit(initData, serverVersion));
+  dispatch(realmInit(initData));
   dispatch(initialFetchComplete());
   dispatch(startEventPolling(initData.queue_id, initData.last_event_id));
 
+  const serverVersion = new ZulipVersion(initData.zulip_version);
   if (!serverVersion.isAtLeast(MIN_RECENTPMS_SERVER_VERSION)) {
     dispatch(fetchPrivateMessages());
   }
@@ -344,13 +494,14 @@ export const doInitialFetch = () => async (dispatch: Dispatch, getState: GetStat
   dispatch(initNotifications());
 };
 
-export const uploadFile = (narrow: Narrow, uri: string, name: string) => async (
-  dispatch: Dispatch,
-  getState: GetState,
-) => {
+export const uploadFile = (
+  destinationNarrow: Narrow,
+  uri: string,
+  name: string,
+): ThunkAction<Promise<void>> => async (dispatch, getState) => {
   const auth = getAuth(getState());
   const response = await api.uploadFile(auth, uri, name);
   const messageToSend = `[${name}](${response.uri})`;
 
-  dispatch(addToOutbox(narrow, messageToSend));
+  dispatch(addToOutbox(destinationNarrow, messageToSend));
 };

@@ -1,14 +1,16 @@
 /* @flow strict-local */
 import { Clipboard, Alert } from 'react-native';
 
+import invariant from 'invariant';
 import * as NavigationService from '../nav/NavigationService';
 import * as api from '../api';
 import config from '../config';
 import type { Dispatch, GetText, Message, Narrow, Outbox, EditMessage, UserId } from '../types';
 import type { BackgroundData } from './MessageList';
-import type { ShowActionSheetWithOptions } from '../message/messageActionSheet';
+import type { ShowActionSheetWithOptions } from '../action-sheets';
 import type { JSONableDict } from '../utils/jsonable';
 import { showToast } from '../utils/info';
+import { streamNameOfStreamMessage, pmUiRecipientsFromMessage } from '../utils/recipient';
 import { isUrlAnImage } from '../utils/url';
 import * as logging from '../utils/logging';
 import { filterUnreadMessagesInRange } from '../utils/unread';
@@ -22,7 +24,7 @@ import {
   navigateToLightbox,
   messageLinkPress,
 } from '../actions';
-import { showActionSheet } from '../message/messageActionSheet';
+import { showTopicActionSheet, showMessageActionSheet } from '../action-sheets';
 import { ensureUnreachable } from '../types';
 import { base64Utf8Decode } from '../utils/encoding';
 
@@ -130,6 +132,13 @@ type WebViewOutboundEventTimeDetails = {|
   originalText: string,
 |};
 
+type WebViewOutboundEventVote = {|
+  type: 'vote',
+  messageId: number,
+  key: string,
+  vote: number,
+|};
+
 export type WebViewOutboundEvent =
   | WebViewOutboundEventReady
   | WebViewOutboundEventScroll
@@ -144,7 +153,8 @@ export type WebViewOutboundEvent =
   | WebViewOutboundEventWarn
   | WebViewOutboundEventError
   | WebViewOutboundEventMention
-  | WebViewOutboundEventTimeDetails;
+  | WebViewOutboundEventTimeDetails
+  | WebViewOutboundEventVote;
 
 // TODO: Consider completing this and making it exact, once
 // `MessageList`'s props are type-checked.
@@ -170,8 +180,8 @@ const fetchMore = (props: Props, event: WebViewOutboundEventScroll) => {
 };
 
 const markRead = (props: Props, event: WebViewOutboundEventScroll) => {
-  const { debug, flags, auth } = props.backgroundData;
-  if (debug.doNotMarkMessagesAsRead) {
+  const { doNotMarkMessagesAsRead, flags, auth } = props.backgroundData;
+  if (doNotMarkMessagesAsRead) {
     return;
   }
   const unreadMessageIds = filterUnreadMessagesInRange(
@@ -180,9 +190,7 @@ const markRead = (props: Props, event: WebViewOutboundEventScroll) => {
     event.startMessageId,
     event.endMessageId,
   );
-  if (unreadMessageIds.length > 0) {
-    api.queueMarkAsRead(auth, unreadMessageIds);
-  }
+  api.queueMarkAsRead(auth, unreadMessageIds);
 };
 
 const handleImage = (props: Props, src: string, messageId: number) => {
@@ -211,12 +219,34 @@ const handleLongPress = (
     return;
   }
   const { dispatch, showActionSheetWithOptions, backgroundData, narrow, startEditMessage } = props;
-  showActionSheet(
-    target === 'header',
-    showActionSheetWithOptions,
-    { dispatch, startEditMessage, _ },
-    { backgroundData, message, narrow },
-  );
+  if (target === 'header') {
+    if (message.type === 'stream') {
+      const streamName = streamNameOfStreamMessage(message);
+      const stream = backgroundData.streamsByName.get(streamName);
+      invariant(stream !== undefined, 'No stream with provided stream name was found.');
+      showTopicActionSheet({
+        showActionSheetWithOptions,
+        callbacks: { dispatch, _ },
+        backgroundData,
+        streamId: stream.stream_id,
+        topic: message.subject,
+      });
+    } else if (message.type === 'private') {
+      const label = pmUiRecipientsFromMessage(message, backgroundData.ownUser.user_id)
+        .map(r => r.full_name)
+        .sort()
+        .join(', ');
+      showToast(label);
+    }
+  } else if (target === 'message') {
+    showMessageActionSheet({
+      showActionSheetWithOptions,
+      callbacks: { dispatch, startEditMessage, _ },
+      backgroundData,
+      message,
+      narrow,
+    });
+  }
 };
 
 export const handleWebViewOutboundEvent = (
@@ -288,6 +318,19 @@ export const handleWebViewOutboundEvent = (
         originalText: event.originalText,
       });
       Alert.alert('', alertText);
+      break;
+    }
+
+    case 'vote': {
+      api.sendSubmessage(
+        props.backgroundData.auth,
+        event.messageId,
+        JSON.stringify({
+          type: 'vote',
+          key: event.key,
+          vote: event.vote,
+        }),
+      );
       break;
     }
 

@@ -4,10 +4,10 @@ import type { Subscription } from '../apiTypes';
 import { apiGet } from '../apiFetch';
 
 type ApiResponseSubscriptions = {|
-  ...ApiResponseSuccess,
+  ...$Exact<ApiResponseSuccess>,
   subscriptions: Subscription[],
 |};
 
-/** See https://zulip.com/api/get-subscribed-streams */
+/** See https://zulip.com/api/get-subscriptions */
 export default (auth: Auth): Promise<ApiResponseSubscriptions> =>
   apiGet(auth, 'users/me/subscriptions');

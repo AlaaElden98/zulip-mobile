@@ -1,7 +1,9 @@
+import * as logging from '../../utils/logging';
+
 import { KEY_PREFIX, REHYDRATE } from './constants'
-import createAsyncLocalStorage from './defaults/asyncLocalStorage'
 import purgeStoredState from './purgeStoredState'
 import stringify from 'json-stringify-safe'
+import invariant from 'invariant';
 
 export default function createPersistor (store, config) {
   // defaults
@@ -24,60 +26,103 @@ export default function createPersistor (store, config) {
   }
   const blacklist = config.blacklist || []
   const whitelist = config.whitelist || false
-  const transforms = config.transforms || []
-  const debounce = config.debounce || false
   const keyPrefix = config.keyPrefix !== undefined ? config.keyPrefix : KEY_PREFIX
 
-  // pluggable state shape (e.g. immutablejs)
-  const stateInit = config._stateInit || {}
-  const stateIterator = config._stateIterator || defaultStateIterator
-  const stateGetter = config._stateGetter || defaultStateGetter
-  const stateSetter = config._stateSetter || defaultStateSetter
+  const storage = config.storage;
 
-  // storage with keys -> getAllKeys for localForage support
-  let storage = config.storage || createAsyncLocalStorage('local')
-  if (storage.keys && !storage.getAllKeys) {
-    storage.getAllKeys = storage.keys
-  }
-
-  // initialize stateful values
-  let lastState = stateInit
   let paused = false
-  let storesToProcess = []
-  let timeIterator = null
+  let writeInProgress = false
+
+  // This is the last state we've attempted to write out.
+  let lastWrittenState = {}
+
+  // These are the keys for which we have a failed, or not yet completed,
+  // write since the last successful write.
+  const outstandingKeys = new Set();
 
   store.subscribe(() => {
-    if (paused) return
+    if (paused) return;
 
-    let state = store.getState()
+    write();
+  })
 
-    stateIterator(state, (subState, key) => {
-      if (!passWhitelistBlacklist(key)) return
-      if (stateGetter(lastState, key) === stateGetter(state, key)) return
-      if (storesToProcess.indexOf(key) !== -1) return
-      storesToProcess.push(key)
-    })
+  async function write() {
+    // Take the lock…
+    if (writeInProgress) return;
+    writeInProgress = true;
+    try {
+      // … and immediately enter a try/finally to release it.
 
-    const len = storesToProcess.length
+      // Then yield so the `subscribe` callback can promptly return.
+      await new Promise(r => setTimeout(r, 0));
 
-    // time iterator (read: debounce)
-    if (timeIterator === null) {
-      timeIterator = setInterval(() => {
-        if ((paused && len === storesToProcess.length) || storesToProcess.length === 0) {
-          clearInterval(timeIterator)
-          timeIterator = null
-          return
-        }
+      let state = undefined;
+      // eslint-disable-next-line no-cond-assign
+      while ((state = store.getState()) !== lastWrittenState) {
+        await writeOnce(state);
+      }
+    } finally {
+      // Release the lock, so the next `subscribe` callback will start the
+      // loop again.
+      writeInProgress = false;
+    }
+  }
 
-        let key = storesToProcess.shift()
-        let storageKey = createStorageKey(key)
-        let endState = transforms.reduce((subState, transformer) => transformer.in(subState, key), stateGetter(store.getState(), key))
-        if (typeof endState !== 'undefined') storage.setItem(storageKey, serializer(endState), warnIfSetError(key))
-      }, debounce)
+  /**
+   * Update the storage to the given state.
+   *
+   * The storage is assumed to already reflect `lastWrittenState`.
+   * On completion, sets `lastWrittenState` to `state`.
+   *
+   * This function must not be called concurrently.  The caller is
+   * responsible for taking an appropriate lock.
+   */
+  async function writeOnce(state) {
+    // Identify what keys we need to write.
+    // This includes anything already in outstandingKeys, because we don't
+    // know what value was last successfully stored for those.
+    for (const key of Object.keys(state)) {
+      if (!passWhitelistBlacklist(key)) {
+        continue;
+      }
+      if (state[key] === lastWrittenState[key]) {
+        continue;
+      }
+      outstandingKeys.add(key);
+    }
+    lastWrittenState = state
+
+    if (outstandingKeys.size === 0) {
+      // `multiSet` doesn't like an empty array, so return early.
+      return;
     }
 
-    lastState = state
-  })
+    // Serialize those keys' subtrees, with yields after each one.
+    const writes = []
+    for (const key of outstandingKeys) {
+      writes.push([createStorageKey(key), serializer(state[key])])
+      await new Promise(r => setTimeout(r, 0));
+    }
+
+    // Write them all out, in one `storage.multiSet` operation.
+    invariant(writes.length > 0, 'should have nonempty writes list');
+    try {
+      // Warning: not guaranteed to be done in a transaction.
+      await storage.multiSet(writes);
+    } catch (e) {
+      logging.warn(
+        e,
+        {
+          message: 'An error was encountered while trying to persist this set of keys',
+          keys: [...outstandingKeys.values()],
+        }
+      );
+      throw e
+    }
+
+    // Record success.
+    outstandingKeys.clear();
+  }
 
   function passWhitelistBlacklist (key) {
     if (whitelist && whitelist.indexOf(key) === -1) return false
@@ -88,15 +133,14 @@ export default function createPersistor (store, config) {
   function adhocRehydrate (incoming, options = {}) {
     let state = {}
     if (options.serial) {
-      stateIterator(incoming, (subState, key) => {
+      Object.keys(incoming).forEach((key) => {
+        const subState = incoming[key]
         try {
           let data = deserializer(subState)
-          let value = transforms.reduceRight((interState, transformer) => {
-            return transformer.out(interState, key)
-          }, data)
-          state = stateSetter(state, key, value)
+          let value = data
+          state[key] = value
         } catch (err) {
-          if (process.env.NODE_ENV !== 'production') console.warn(`Error rehydrating data for key "${key}"`, subState, err)
+          logging.warn(err, { message: 'Error rehydrating data for a key', key })
         }
       })
     } else state = incoming
@@ -116,16 +160,14 @@ export default function createPersistor (store, config) {
     resume: () => { paused = false },
     purge: (keys) => purgeStoredState({storage, keyPrefix}, keys),
 
-    // Only used in `persistStore`, to force `lastState` to update
-    // with the results of `REHYDRATE` even when the persistor is
-    // paused.
-    _resetLastState: () => { lastState = store.getState() }
-  }
-}
-
-function warnIfSetError (key) {
-  return function setError (err) {
-    if (err && process.env.NODE_ENV !== 'production') { console.warn('Error storing data for key:', key, err) }
+    /**
+     * Set `lastWrittenState` to the current `store.getState()`.
+     *
+     * Only to be used in `persistStore`, to force `lastWrittenState` to
+     * update with the results of `REHYDRATE` even when the persistor is
+     * paused.
+     */
+    _resetLastWrittenState: () => { lastWrittenState = store.getState() }
   }
 }
 
@@ -150,17 +192,4 @@ function rehydrateAction (data) {
     type: REHYDRATE,
     payload: data
   }
-}
-
-function defaultStateIterator (collection, callback) {
-  return Object.keys(collection).forEach((key) => callback(collection[key], key))
-}
-
-function defaultStateGetter (state, key) {
-  return state[key]
-}
-
-function defaultStateSetter (state, key, value) {
-  state[key] = value
-  return state
 }

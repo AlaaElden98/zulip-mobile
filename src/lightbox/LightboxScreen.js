@@ -1,12 +1,11 @@
 /* @flow strict-local */
 import React from 'react';
+import type { Node } from 'react';
 import { View } from 'react-native';
-import { ActionSheetProvider } from '@expo/react-native-action-sheet';
 
 import type { Message } from '../types';
 import type { RouteProp } from '../react-navigation';
 import type { AppNavigationProp } from '../nav/AppNavigator';
-import { ZulipStatusBar } from '../common';
 import { createStyleSheet } from '../styles';
 import Lightbox from './Lightbox';
 
@@ -24,15 +23,12 @@ type Props = $ReadOnly<{|
   route: RouteProp<'lightbox', {| src: string, message: Message |}>,
 |}>;
 
-export default function LightboxScreen(props: Props) {
+export default function LightboxScreen(props: Props): Node {
   const { src, message } = props.route.params;
 
   return (
     <View style={styles.screen}>
-      <ZulipStatusBar hidden backgroundColor="black" />
-      <ActionSheetProvider>
-        <Lightbox src={src} message={message} />
-      </ActionSheetProvider>
+      <Lightbox src={src} message={message} />
     </View>
   );
 }

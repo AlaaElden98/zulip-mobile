@@ -1,15 +1,18 @@
 /* @flow strict-local */
 
 import React, { useState, useCallback } from 'react';
+import type { Node } from 'react';
 import { View, Dimensions, LayoutAnimation } from 'react-native';
+// $FlowFixMe[untyped-import]
 import PhotoView from 'react-native-photo-view';
+// $FlowFixMe[untyped-import]
 import { useActionSheet } from '@expo/react-native-action-sheet';
 
 import * as NavigationService from '../nav/NavigationService';
 import type { Message } from '../types';
 import { useSelector } from '../react-redux';
-import type { ShowActionSheetWithOptions } from '../message/messageActionSheet';
-import { getAuth, getSession } from '../selectors';
+import type { ShowActionSheetWithOptions } from '../action-sheets';
+import { getAuth, getGlobalSession } from '../selectors';
 import { getResource } from '../utils/url';
 import LightboxHeader from './LightboxHeader';
 import LightboxFooter from './LightboxFooter';
@@ -17,6 +20,7 @@ import { constructActionSheetButtons, executeActionSheetAction } from './Lightbo
 import { createStyleSheet } from '../styles';
 import { navigateBack } from '../actions';
 import { streamNameOfStreamMessage } from '../utils/recipient';
+import { ZulipStatusBar } from '../common';
 
 const styles = createStyleSheet({
   img: {
@@ -41,7 +45,7 @@ type Props = $ReadOnly<{|
   message: Message,
 |}>;
 
-export default function Lightbox(props: Props) {
+export default function Lightbox(props: Props): Node {
   const [headerFooterVisible, setHeaderFooterVisible] = useState<boolean>(true);
   const showActionSheetWithOptions: ShowActionSheetWithOptions = useActionSheet()
     .showActionSheetWithOptions;
@@ -65,73 +69,76 @@ export default function Lightbox(props: Props) {
 
   // Since we're using `Dimensions.get` (below), we'll want a rerender
   // when the orientation changes. No need to store the value.
-  useSelector(state => getSession(state).orientation);
+  useSelector(state => getGlobalSession(state).orientation);
 
   const { width: windowWidth, height: windowHeight } = Dimensions.get('window');
 
   return (
-    <View style={styles.container}>
-      <PhotoView
-        source={resource}
-        style={[styles.img, { width: windowWidth }]}
-        // Doesn't seem to do anything on iOS:
-        //   https://github.com/alwx/react-native-photo-view/issues/62
-        //   https://github.com/alwx/react-native-photo-view/issues/98
-        // TODO: Figure out how to make it work.
-        resizeMode="contain"
-        // Android already doesn't show any scrollbars; these two
-        // iOS-only props let us hide them on iOS.
-        showsHorizontalScrollIndicator={false}
-        showsVerticalScrollIndicator={false}
-        onTap={handleImagePress}
-        onViewTap={handleImagePress}
-      />
-      <View
-        style={[
-          styles.overlay,
-          styles.header,
-          { width: windowWidth },
-          headerFooterVisible ? { top: 0 } : { bottom: windowHeight },
-        ]}
-      >
-        <LightboxHeader
-          onPressBack={() => {
-            NavigationService.dispatch(navigateBack());
-          }}
-          timestamp={message.timestamp}
-          avatarUrl={message.avatar_url}
-          senderName={message.sender_full_name}
-          senderEmail={message.sender_email}
+    <>
+      <ZulipStatusBar hidden={!headerFooterVisible} backgroundColor="black" />
+      <View style={styles.container}>
+        <PhotoView
+          source={resource}
+          style={[styles.img, { width: windowWidth }]}
+          // Doesn't seem to do anything on iOS:
+          //   https://github.com/alwx/react-native-photo-view/issues/62
+          //   https://github.com/alwx/react-native-photo-view/issues/98
+          // TODO: Figure out how to make it work.
+          resizeMode="contain"
+          // Android already doesn't show any scrollbars; these two
+          // iOS-only props let us hide them on iOS.
+          showsHorizontalScrollIndicator={false}
+          showsVerticalScrollIndicator={false}
+          onTap={handleImagePress}
+          onViewTap={handleImagePress}
         />
+        <View
+          style={[
+            styles.overlay,
+            styles.header,
+            { width: windowWidth },
+            headerFooterVisible ? { top: 0 } : { bottom: windowHeight },
+          ]}
+        >
+          <LightboxHeader
+            onPressBack={() => {
+              NavigationService.dispatch(navigateBack());
+            }}
+            timestamp={message.timestamp}
+            avatarUrl={message.avatar_url}
+            senderName={message.sender_full_name}
+            senderEmail={message.sender_email}
+          />
+        </View>
+        <View
+          style={[
+            styles.overlay,
+            { width: windowWidth },
+            headerFooterVisible ? { bottom: 0 } : { top: windowHeight },
+          ]}
+        >
+          <LightboxFooter
+            displayMessage={footerMessage}
+            onOptionsPress={() => {
+              const options = constructActionSheetButtons();
+              const cancelButtonIndex = options.length - 1;
+              showActionSheetWithOptions(
+                {
+                  options,
+                  cancelButtonIndex,
+                },
+                buttonIndex => {
+                  executeActionSheetAction({
+                    title: options[buttonIndex],
+                    src,
+                    auth,
+                  });
+                },
+              );
+            }}
+          />
+        </View>
       </View>
-      <View
-        style={[
-          styles.overlay,
-          { width: windowWidth },
-          headerFooterVisible ? { bottom: 0 } : { top: windowHeight },
-        ]}
-      >
-        <LightboxFooter
-          displayMessage={footerMessage}
-          onOptionsPress={() => {
-            const options = constructActionSheetButtons();
-            const cancelButtonIndex = options.length - 1;
-            showActionSheetWithOptions(
-              {
-                options,
-                cancelButtonIndex,
-              },
-              buttonIndex => {
-                executeActionSheetAction({
-                  title: options[buttonIndex],
-                  src,
-                  auth,
-                });
-              },
-            );
-          }}
-        />
-      </View>
-    </View>
+    </>
   );
 }

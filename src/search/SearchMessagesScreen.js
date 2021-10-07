@@ -1,5 +1,7 @@
 /* @flow strict-local */
 import React, { PureComponent } from 'react';
+import type { ComponentType } from 'react';
+import type { EditingEvent } from 'react-native/Libraries/Components/TextInput/TextInput';
 
 import type { RouteProp } from '../react-navigation';
 import type { AppNavigationProp } from '../nav/AppNavigator';
@@ -13,27 +15,44 @@ import { connect } from '../react-redux';
 import { getAuth } from '../account/accountsSelectors';
 import { fetchMessages } from '../message/fetchActions';
 
-type Props = $ReadOnly<{|
+type OuterProps = $ReadOnly<{|
+  // These should be passed from React Navigation
   navigation: AppNavigationProp<'search-messages'>,
   route: RouteProp<'search-messages', void>,
+|}>;
 
+type SelectorProps = $ReadOnly<{|
   auth: Auth,
+|}>;
+
+type Props = $ReadOnly<{|
+  ...OuterProps,
+
   dispatch: Dispatch,
+  ...SelectorProps,
   // Warning: do not add new props without considering their effect on the
   // behavior of this component's non-React internal state. See comment below.
 |}>;
 
 type State = {|
-  /** The list of messages returned for the latest query, or `null` if there is
-   *  effectively no "latest query" to have results from.
+  /** The latest search query we have results for. */
+  query: string,
+
+  /**
+   * The list of messages found as results for `query`.
+   *
+   * This is `null` if `query` is empty, representing an empty search box
+   * and so effectively not a query to have results from at all.
    */
   messages: Message[] | null,
+
   /** Whether there is currently an active valid network request. */
   isFetching: boolean,
 |};
 
-class SearchMessagesScreen extends PureComponent<Props, State> {
+class SearchMessagesScreenInner extends PureComponent<Props, State> {
   state = {
+    query: '',
     messages: null,
     isFetching: false,
   };
@@ -70,14 +89,15 @@ class SearchMessagesScreen extends PureComponent<Props, State> {
   // reconstructed anyway. However, addition of any new props which need to
   // invalidate outstanding requests on change will require more work.
 
-  handleQueryChange = async (query: string) => {
+  handleQuerySubmit = async (e: EditingEvent) => {
+    const query = e.nativeEvent.text;
     const id = ++this.lastIdSent;
 
     if (query === '') {
       // The empty query can be resolved without a network call.
       this.lastIdReceived = id;
       this.lastIdSuccess = id;
-      this.setState({ messages: null, isFetching: false });
+      this.setState({ query, messages: null, isFetching: false });
       return;
     }
 
@@ -88,7 +108,7 @@ class SearchMessagesScreen extends PureComponent<Props, State> {
       // Update `state.messages` if this is our new latest result.
       if (id > this.lastIdSuccess) {
         this.lastIdSuccess = id;
-        this.setState({ messages });
+        this.setState({ query, messages });
       }
     } finally {
       // Updating `isFetching` is the same for success or failure.
@@ -105,10 +125,10 @@ class SearchMessagesScreen extends PureComponent<Props, State> {
   };
 
   // The real work to be done on a query is async.  This wrapper exists
-  // just to fire off `handleQueryChange` without waiting for it.
+  // just to fire off `handleQuerySubmit` without waiting for it.
   // TODO do we even need this wrapper?
-  handleQueryChangeWrapper = (query: string) => {
-    this.handleQueryChange(query);
+  handleQuerySubmitWrapper = (e: EditingEvent) => {
+    this.handleQuerySubmit(e);
   };
 
   render() {
@@ -118,15 +138,21 @@ class SearchMessagesScreen extends PureComponent<Props, State> {
       <Screen
         search
         autoFocus
-        searchBarOnChange={this.handleQueryChangeWrapper}
+        searchBarOnSubmit={this.handleQuerySubmitWrapper}
         style={styles.flexed}
       >
-        <SearchMessagesCard messages={messages} isFetching={isFetching} />
+        <SearchMessagesCard
+          messages={messages}
+          isFetching={isFetching}
+          narrow={SEARCH_NARROW(this.state.query)}
+        />
       </Screen>
     );
   }
 }
 
-export default connect(state => ({
+const SearchMessagesScreen: ComponentType<OuterProps> = connect(state => ({
   auth: getAuth(state),
-}))(SearchMessagesScreen);
+}))(SearchMessagesScreenInner);
+
+export default SearchMessagesScreen;

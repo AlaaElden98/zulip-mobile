@@ -1,3 +1,5 @@
+import * as logging from '../../utils/logging';
+
 import { KEY_PREFIX } from './constants'
 
 export default function purgeStoredState (config, keys) {
@@ -10,24 +12,36 @@ export default function purgeStoredState (config, keys) {
 
   if (typeof keys === 'undefined') { // if keys is not defined, purge all keys
     return new Promise((resolve, reject) => {
-      storage.getAllKeys((err, allKeys) => {
+      (async () => {
+        let err = null;
+        let allKeys = undefined;
+        try {
+          allKeys = await storage.getAllKeys()
+        } catch (e) {
+          err = e
+        }
         if (err) {
-          if (process.env.NODE_ENV !== 'production') console.warn('redux-persist: error during purgeStoredState in storage.getAllKeys')
+          logging.warn(err, { message: 'redux-persist: error during purgeStoredState in storage.getAllKeys' })
           reject(err)
         } else {
           resolve(purgeStoredState(config, allKeys.filter((key) => key.indexOf(keyPrefix) === 0).map((key) => key.slice(keyPrefix.length))))
         }
-      })
+      })()
     })
   } else { // otherwise purge specified keys
-    return Promise.all(keys.map((key) => {
-      return storage.removeItem(`${keyPrefix}${key}`, warnIfRemoveError(key))
+    return Promise.all(keys.map(async (key) => {
+      try {
+        return await storage.removeItem(`${keyPrefix}${key}`)
+      } catch (err) {
+        warnIfRemoveError(key)(err)
+        throw err
+      }
     }))
   }
 }
 
 function warnIfRemoveError (key) {
   return function removeError (err) {
-    if (err && process.env.NODE_ENV !== 'production') { console.warn('Error storing data for key:', key, err) }
+    if (err) { logging.warn(err, { message: 'Error storing data for a key.', key }) }
   }
 }

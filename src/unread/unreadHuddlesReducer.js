@@ -1,4 +1,6 @@
 /* @flow strict-local */
+import invariant from 'invariant';
+
 import type { Action } from '../types';
 import type { UnreadHuddlesState } from './unreadModelTypes';
 import {
@@ -16,19 +18,22 @@ import { NULL_ARRAY } from '../nullObjects';
 const initialState: UnreadHuddlesState = NULL_ARRAY;
 
 const eventNewMessage = (state, action) => {
-  if (action.message.type !== 'private') {
+  const { message } = action;
+
+  if (message.type !== 'private') {
     return state;
   }
 
-  if (recipientsOfPrivateMessage(action.message).length < 3) {
+  if (recipientsOfPrivateMessage(message).length < 3) {
     return state;
   }
 
-  if (action.ownUserId === action.message.sender_id) {
+  invariant(message.flags, 'message in EVENT_NEW_MESSAGE must have flags');
+  if (message.flags.includes('read')) {
     return state;
   }
 
-  return addItemsToHuddleArray(state, [action.message.id], pmUnreadsKeyFromMessage(action.message));
+  return addItemsToHuddleArray(state, [message.id], pmUnreadsKeyFromMessage(message));
 };
 
 const eventUpdateMessageFlags = (state, action) => {
@@ -40,9 +45,9 @@ const eventUpdateMessageFlags = (state, action) => {
     return initialState;
   }
 
-  if (action.operation === 'add') {
+  if (action.op === 'add') {
     return removeItemsDeeply(state, action.messages);
-  } else if (action.operation === 'remove') {
+  } else if (action.op === 'remove') {
     // we do not support that operation
   }
 

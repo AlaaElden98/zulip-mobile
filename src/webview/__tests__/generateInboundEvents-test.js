@@ -2,31 +2,18 @@
 import deepFreeze from 'deep-freeze';
 
 import generateInboundEvents from '../generateInboundEvents';
-import { flagsStateToStringList } from '../html/messageAsHtml';
+import { flagsStateToStringList } from '../html/message';
 import { HOME_NARROW } from '../../utils/narrow';
 import * as eg from '../../__tests__/lib/exampleData';
 import type { Props } from '../MessageList';
 
 describe('generateInboundEvents', () => {
-  const baseBackgroundData = deepFreeze({
-    alertWords: [],
-    allImageEmojiById: eg.action.realm_init.data.realm_emoji,
-    auth: eg.selfAuth,
-    debug: eg.baseReduxState.session.debug,
-    flags: eg.baseReduxState.flags,
-    mute: [],
-    ownUser: eg.selfUser,
-    subscriptions: [],
-    theme: 'default',
-    twentyFourHourTime: false,
-  });
-
   const baseSelectorProps = deepFreeze({
-    backgroundData: baseBackgroundData,
+    backgroundData: eg.backgroundData,
     initialScrollMessageId: null,
     fetching: { older: false, newer: false },
     messages: [],
-    htmlPieceDescriptorsForShownMessages: [],
+    messageListElementsForShownMessages: [],
     typingUsers: [],
   });
 
@@ -113,11 +100,11 @@ describe('generateInboundEvents', () => {
   test('when rendered messages are the same return empty result', () => {
     const prevProps = {
       ...baseProps,
-      htmlPieceDescriptorsForShownMessages: [],
+      messageListElementsForShownMessages: [],
     };
     const nextProps = {
       ...baseProps,
-      htmlPieceDescriptorsForShownMessages: [],
+      messageListElementsForShownMessages: [],
     };
 
     const messages = generateInboundEvents(prevProps, nextProps);
@@ -128,16 +115,12 @@ describe('generateInboundEvents', () => {
   test('when the rendered messages differ (even deeply) a "content" message is returned', () => {
     const prevProps = {
       ...baseProps,
-      htmlPieceDescriptorsForShownMessages: [{ key: 0, data: [], message: null }],
+      messageListElementsForShownMessages: [],
     };
     const nextProps = {
       ...baseProps,
-      htmlPieceDescriptorsForShownMessages: [
-        {
-          key: 0,
-          data: [{ key: 123, type: 'message', isBrief: false, message: eg.streamMessage() }],
-          message: null,
-        },
+      messageListElementsForShownMessages: [
+        { key: 123, type: 'message', isBrief: false, message: eg.streamMessage() },
       ],
     };
 
@@ -168,32 +151,6 @@ describe('generateInboundEvents', () => {
     expect(messages[1].type).toEqual('typing');
   });
 
-  test('when there are several diffs but messages differ too return only a single "content" message', () => {
-    const prevProps = {
-      ...baseProps,
-      fetching: { older: false, newer: false },
-      typingUsers: [],
-      htmlPieceDescriptorsForShownMessages: [{ key: 0, data: [], message: null }],
-    };
-    const nextProps = {
-      ...baseProps,
-      fetching: { older: false, newer: true },
-      typingUsers: [eg.makeUser()],
-      htmlPieceDescriptorsForShownMessages: [
-        {
-          key: 0,
-          data: [{ key: 123, type: 'message', isBrief: false, message: eg.streamMessage() }],
-          message: null,
-        },
-      ],
-    };
-
-    const messages = generateInboundEvents(prevProps, nextProps);
-
-    expect(messages).toHaveLength(1);
-    expect(messages[0].type).toEqual('content');
-  });
-
   test('if a new message is read send a "read" update', () => {
     const message1 = eg.streamMessage({ id: 1 });
     const message2 = eg.streamMessage({ id: 2 });
@@ -202,9 +159,9 @@ describe('generateInboundEvents', () => {
     const prevProps = {
       ...baseProps,
       backgroundData: {
-        ...baseBackgroundData,
+        ...eg.backgroundData,
         flags: {
-          ...baseBackgroundData.flags,
+          ...eg.backgroundData.flags,
           read: { [message2.id]: true },
         },
       },
@@ -212,9 +169,9 @@ describe('generateInboundEvents', () => {
     const nextProps = {
       ...baseProps,
       backgroundData: {
-        ...baseBackgroundData,
+        ...eg.backgroundData,
         flags: {
-          ...baseBackgroundData.flags,
+          ...eg.backgroundData.flags,
           read: { [message1.id]: true, [message2.id]: true, [message3.id]: true },
         },
       },

@@ -7,6 +7,7 @@ import {
   getMessagesForNarrow,
   getStreamInNarrow,
   isNarrowValid,
+  getShownMessagesForNarrow,
 } from '../narrowsSelectors';
 import {
   HOME_NARROW,
@@ -14,6 +15,7 @@ import {
   pm1to1NarrowFromUser,
   streamNarrow,
   topicNarrow,
+  MENTIONED_NARROW,
   STARRED_NARROW,
   pmNarrowFromUsersUnsafe,
   keyFromNarrow,
@@ -24,7 +26,7 @@ import * as eg from '../../__tests__/lib/exampleData';
 describe('getMessagesForNarrow', () => {
   const message = eg.streamMessage({ id: 123 });
   const messages = eg.makeMessagesState([message]);
-  const outboxMessage = eg.makeOutboxMessage({});
+  const outboxMessage = eg.streamOutbox({});
 
   test('if no outbox messages returns messages with no change', () => {
     const state = eg.reduxState({
@@ -91,6 +93,135 @@ describe('getMessagesForNarrow', () => {
     const result = getMessagesForNarrow(state, pm1to1NarrowFromUser(eg.otherUser));
 
     expect(result).toEqual([message]);
+  });
+});
+
+/* eslint-disable no-shadow */
+describe('getShownMessagesForNarrow', () => {
+  const stream = eg.stream;
+  const message = eg.streamMessage();
+  const subscription = eg.subscription;
+  const mutedSubscription = { ...subscription, in_home_view: false };
+  const mutes = [[stream.name, message.subject]];
+
+  const makeStateGeneral = (message, narrow, extra) =>
+    eg.reduxStatePlus({
+      messages: eg.makeMessagesState([message]),
+      narrows: Immutable.Map([[keyFromNarrow(narrow), [message.id]]]),
+      ...extra,
+    });
+  const shownGeneral = (state, narrow) => getShownMessagesForNarrow(state, narrow).length > 0;
+
+  describe('HOME_NARROW', () => {
+    const narrow = HOME_NARROW;
+    const makeState = extra => makeStateGeneral(message, narrow, extra);
+    const shown = state => shownGeneral(state, narrow);
+
+    test('private messages are never muted', () => {
+      expect(shown(makeStateGeneral(eg.pmMessage(), narrow))).toEqual(true);
+    });
+
+    test('message in a stream is not muted if stream and topic not muted', () => {
+      expect(shown(makeState())).toEqual(true);
+    });
+
+    test('message in a stream is muted if stream is not in subscriptions', () => {
+      expect(shown(makeState({ subscriptions: [] }))).toEqual(false);
+    });
+
+    test('message in a stream is muted if the stream is muted', () => {
+      expect(shown(makeState({ subscriptions: [mutedSubscription] }))).toEqual(false);
+    });
+
+    test('message in a stream is muted if the topic is muted and topic matches', () => {
+      expect(shown(makeState({ mute: mutes }))).toEqual(false);
+    });
+
+    test('@-mention message is never muted', () => {
+      const flags = { ...eg.plusReduxState.flags, mentioned: { [message.id]: true } };
+      expect(shown(makeState({ flags, subscriptions: [] }))).toEqual(true);
+      expect(shown(makeState({ flags, subscriptions: [mutedSubscription] }))).toEqual(true);
+      expect(shown(makeState({ flags, mute: mutes }))).toEqual(true);
+    });
+  });
+
+  describe('stream narrow', () => {
+    const narrow = streamNarrow(stream.name);
+    const makeState = extra => makeStateGeneral(message, narrow, extra);
+    const shown = state => shownGeneral(state, narrow);
+
+    test('message not muted even if stream not subscribed', () => {
+      expect(shown(makeState({ subscriptions: [] }))).toEqual(true);
+    });
+
+    test('message not muted even if stream is muted', () => {
+      expect(shown(makeState({ subscriptions: [mutedSubscription] }))).toEqual(true);
+    });
+
+    test('message muted if topic is muted', () => {
+      expect(shown(makeState({ mute: mutes }))).toEqual(false);
+    });
+
+    test('@-mention message is never muted', () => {
+      const flags = { ...eg.plusReduxState.flags, mentioned: { [message.id]: true } };
+      expect(shown(makeState({ flags, subscriptions: [] }))).toEqual(true);
+      expect(shown(makeState({ flags, subscriptions: [mutedSubscription] }))).toEqual(true);
+      expect(shown(makeState({ flags, mute: mutes }))).toEqual(true);
+    });
+  });
+
+  describe('topic narrow', () => {
+    const narrow = topicNarrow(stream.name, message.subject);
+    const makeState = extra => makeStateGeneral(message, narrow, extra);
+    const shown = state => shownGeneral(state, narrow);
+
+    test('message not muted even if stream not subscribed', () => {
+      expect(shown(makeState({ subscriptions: [] }))).toEqual(true);
+    });
+
+    test('message not muted even if stream is muted', () => {
+      expect(shown(makeState({ subscriptions: [mutedSubscription] }))).toEqual(true);
+    });
+
+    test('message not muted even if topic is muted', () => {
+      expect(shown(makeState({ mute: mutes }))).toEqual(true);
+    });
+  });
+
+  describe('starred-messages narrow', () => {
+    const narrow = STARRED_NARROW;
+    const makeState = extra => makeStateGeneral(message, narrow, extra);
+    const shown = state => shownGeneral(state, narrow);
+
+    test('message not muted even if stream not subscribed', () => {
+      expect(shown(makeState({ subscriptions: [] }))).toEqual(true);
+    });
+
+    test('message not muted even if stream is muted', () => {
+      expect(shown(makeState({ subscriptions: [mutedSubscription] }))).toEqual(true);
+    });
+
+    test('message not muted even if topic is muted', () => {
+      expect(shown(makeState({ mute: mutes }))).toEqual(true);
+    });
+  });
+
+  describe('@-mentions narrow', () => {
+    const narrow = MENTIONED_NARROW;
+    const makeState = extra => makeStateGeneral(message, narrow, extra);
+    const shown = state => shownGeneral(state, narrow);
+
+    test('message not muted even if stream not subscribed', () => {
+      expect(shown(makeState({ subscriptions: [] }))).toEqual(true);
+    });
+
+    test('message not muted even if stream is muted', () => {
+      expect(shown(makeState({ subscriptions: [mutedSubscription] }))).toEqual(true);
+    });
+
+    test('message not muted even if topic is muted', () => {
+      expect(shown(makeState({ mute: mutes }))).toEqual(true);
+    });
   });
 });
 

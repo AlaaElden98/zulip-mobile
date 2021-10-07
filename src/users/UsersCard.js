@@ -1,43 +1,35 @@
 /* @flow strict-local */
 
-import React, { PureComponent } from 'react';
+import React, { useCallback } from 'react';
+import type { Node } from 'react';
 
 import * as NavigationService from '../nav/NavigationService';
-import type { Dispatch, PresenceState, User, UserOrBot } from '../types';
-import { connect } from '../react-redux';
+import type { UserOrBot } from '../types';
+import { useSelector, useDispatch } from '../react-redux';
 import { pm1to1NarrowFromUser } from '../utils/narrow';
 import UserList from './UserList';
 import { getUsers, getPresence } from '../selectors';
 import { navigateBack, doNarrow } from '../actions';
 
 type Props = $ReadOnly<{|
-  dispatch: Dispatch,
-  users: User[],
   filter: string,
-  presences: PresenceState,
 |}>;
 
-class UsersCard extends PureComponent<Props> {
-  handleUserNarrow = (user: UserOrBot) => {
-    const { dispatch } = this.props;
-    NavigationService.dispatch(navigateBack());
-    dispatch(doNarrow(pm1to1NarrowFromUser(user)));
-  };
+export default function UsersCard(props: Props): Node {
+  const { filter } = props;
+  const dispatch = useDispatch();
+  const users = useSelector(getUsers);
+  const presences = useSelector(getPresence);
 
-  render() {
-    const { users, filter, presences } = this.props;
-    return (
-      <UserList
-        users={users}
-        filter={filter}
-        presences={presences}
-        onPress={this.handleUserNarrow}
-      />
-    );
-  }
+  const handleUserNarrow = useCallback(
+    (user: UserOrBot) => {
+      NavigationService.dispatch(navigateBack());
+      dispatch(doNarrow(pm1to1NarrowFromUser(user)));
+    },
+    [dispatch],
+  );
+
+  return (
+    <UserList users={users} filter={filter} presences={presences} onPress={handleUserNarrow} />
+  );
 }
-
-export default connect(state => ({
-  users: getUsers(state),
-  presences: getPresence(state),
-}))(UsersCard);

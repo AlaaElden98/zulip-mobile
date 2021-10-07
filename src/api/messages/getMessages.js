@@ -2,13 +2,13 @@
 import type { Auth, ApiResponseSuccess } from '../transportTypes';
 import type { Identity } from '../../types';
 import type { Message, ApiNarrow } from '../apiTypes';
-import type { Reaction, UserId } from '../modelTypes';
+import type { PmMessage, StreamMessage, Reaction, UserId } from '../modelTypes';
 import { apiGet } from '../apiFetch';
 import { identityOfAuth } from '../../account/accountMisc';
 import { AvatarURL } from '../../utils/avatar';
 
 type ApiResponseMessages = {|
-  ...ApiResponseSuccess,
+  ...$Exact<ApiResponseSuccess>,
   anchor: number,
   found_anchor?: boolean,
   found_newest?: boolean,
@@ -22,6 +22,9 @@ type ApiResponseMessages = {|
  * Note that reaction events have a *different* variation; see their
  * handling in `eventToAction`.
  */
+// We shouldn't have to rely on this format on servers at feature
+// level 2+; those newer servers include a top-level `user_id` field
+// in addition to the `user` object. See #4072.
 export type ServerReaction = $ReadOnly<{|
   ...$Diff<Reaction, {| user_id: mixed |}>,
   user: $ReadOnly<{|
@@ -31,11 +34,15 @@ export type ServerReaction = $ReadOnly<{|
   |}>,
 |}>;
 
-export type ServerMessage = $ReadOnly<{|
-  ...$Exact<Message>,
+// How `ServerMessage` relates to `Message`, in a way that applies
+// uniformly to `Message`'s subtypes.
+type ServerMessageOf<M: Message> = $ReadOnly<{|
+  ...$Exact<M>,
   avatar_url: string | null,
   reactions: $ReadOnlyArray<ServerReaction>,
 |}>;
+
+export type ServerMessage = ServerMessageOf<PmMessage> | ServerMessageOf<StreamMessage>;
 
 // The actual response from the server.  We convert the data from this to
 // `ApiResponseMessages` before returning it to application code.
@@ -45,27 +52,26 @@ type ServerApiResponseMessages = {|
 |};
 
 /** Exported for tests only. */
-export const migrateMessages = (messages: ServerMessage[], identity: Identity): Message[] =>
-  messages.map(message => {
-    const { reactions, avatar_url: rawAvatarUrl, ...restMessage } = message;
-
-    return {
-      ...restMessage,
-      avatar_url: AvatarURL.fromUserOrBotData({
-        rawAvatarUrl,
-        email: message.sender_email,
-        userId: message.sender_id,
-        realm: identity.realm,
-      }),
-      reactions: reactions.map(reaction => {
-        const { user, ...restReaction } = reaction;
-        return {
-          ...restReaction,
-          user_id: user.id,
-        };
-      }),
-    };
-  });
+export const migrateMessages = (
+  messages: $ReadOnlyArray<ServerMessage>,
+  identity: Identity,
+): Message[] =>
+  messages.map(<M: Message>(message: ServerMessageOf<M>): M => ({
+    ...message,
+    avatar_url: AvatarURL.fromUserOrBotData({
+      rawAvatarUrl: message.avatar_url,
+      email: message.sender_email,
+      userId: message.sender_id,
+      realm: identity.realm,
+    }),
+    reactions: message.reactions.map(reaction => {
+      const { user, ...restReaction } = reaction;
+      return {
+        ...restReaction,
+        user_id: user.id,
+      };
+    }),
+  }));
 
 const migrateResponse = (response, identity: Identity) => {
   const { messages, ...restResponse } = response;

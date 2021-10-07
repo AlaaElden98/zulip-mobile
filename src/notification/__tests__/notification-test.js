@@ -11,6 +11,8 @@ import * as eg from '../../__tests__/lib/exampleData';
 import { fromAPNsImpl as extractIosNotificationData } from '../extract';
 import objectEntries from '../../utils/objectEntries';
 
+const realm_uri = eg.realm.toString();
+
 describe('getNarrowFromNotificationData', () => {
   const ownUserId = eg.selfUser.user_id;
 
@@ -23,6 +25,7 @@ describe('getNarrowFromNotificationData', () => {
 
   test('recognizes stream notifications and returns topic narrow', () => {
     const notification = {
+      realm_uri,
       recipient_type: 'stream',
       stream: 'some stream',
       topic: 'some topic',
@@ -35,6 +38,7 @@ describe('getNarrowFromNotificationData', () => {
     const users = [eg.selfUser, eg.otherUser];
     const allUsersByEmail: Map<string, UserOrBot> = new Map(users.map(u => [u.email, u]));
     const notification = {
+      realm_uri,
       recipient_type: 'private',
       sender_email: eg.otherUser.email,
     };
@@ -47,6 +51,7 @@ describe('getNarrowFromNotificationData', () => {
     const allUsersByEmail: Map<string, UserOrBot> = new Map(users.map(u => [u.email, u]));
 
     const notification = {
+      realm_uri,
       recipient_type: 'private',
       pm_users: users.map(u => u.user_id).join(','),
     };
@@ -61,15 +66,9 @@ describe('getNarrowFromNotificationData', () => {
 
 describe('extract iOS notification data', () => {
   const barebones = deepFreeze({
-    stream: { recipient_type: 'stream', stream: 'announce', topic: 'New channel' },
-    private: {
-      recipient_type: 'private',
-      sender_email: 'nobody@example.com',
-    },
-    'group PM': {
-      recipient_type: 'private',
-      sender_email: 'nobody@example.com',
-    },
+    stream: { recipient_type: 'stream', stream: 'announce', topic: 'New channel', realm_uri },
+    '1:1 PM': { recipient_type: 'private', sender_email: 'nobody@example.com', realm_uri },
+    'group PM': { recipient_type: 'private', pm_users: '54,321', realm_uri },
   });
 
   describe('success', () => {
@@ -78,7 +77,7 @@ describe('extract iOS notification data', () => {
 
     for (const [type, data] of objectEntries(barebones)) {
       test(`${type} notification`, () => {
-        // barebones 1.8.0-style message is accepted
+        // barebones 1.9.0-style message is accepted
         const msg = data;
         expect(verify(msg)).toEqual(msg);
 
@@ -89,10 +88,6 @@ describe('extract iOS notification data', () => {
         // unknown fields are ignored and not copied
         const msg2a = { ...msg, unknown_data: ['unknown_data'] };
         expect(verify(msg2a)).toEqual(msg);
-
-        // realm_uri is copied if present
-        const msg3 = { ...msg, realm_uri: 'https://zulip.example.org' };
-        expect(verify(msg3)).toEqual(msg3);
       });
     }
   });
@@ -110,22 +105,35 @@ describe('extract iOS notification data', () => {
     });
 
     test('very-old-style messages', () => {
-      expect(make({ message_ids: [123] })).toThrow(/archaic/);
+      const sender_email = 'nobody@example.com';
+      // baseline
+      expect(make({ realm_uri, recipient_type: 'private', sender_email })).toBeTruthy();
+      // missing recipient_type
+      expect(make({ realm_uri, sender_email })).toThrow(/archaic/);
+      // missing realm_uri
+      expect(make({ recipient_type: 'private', sender_email })).toThrow(/archaic/);
     });
 
     test('broken or partial messages', () => {
-      expect(make({ recipient_type: 'huddle' })).toThrow(/invalid/);
-      expect(make({ recipient_type: 'stream' })).toThrow(/invalid/);
-      expect(make({ recipient_type: 'stream', stream: 'stream name' })).toThrow(/invalid/);
-      expect(make({ recipient_type: 'stream', subject: 'topic' })).toThrow(/invalid/);
-      expect(make({ recipient_type: 'private', subject: 'topic' })).toThrow(/invalid/);
+      expect(make({ realm_uri, recipient_type: 'huddle' })).toThrow(/invalid/);
+      expect(make({ realm_uri, recipient_type: 'stream' })).toThrow(/invalid/);
+      expect(make({ realm_uri, recipient_type: 'stream', stream: 'stream name' })).toThrow(
+        /invalid/,
+      );
+      expect(make({ realm_uri, recipient_type: 'stream', subject: 'topic' })).toThrow(/invalid/);
+      expect(make({ realm_uri, recipient_type: 'private', subject: 'topic' })).toThrow(/invalid/);
     });
 
     test('values of incorrect type', () => {
-      expect(make({ recipient_type: 'private', pm_users: [1, 2, 3] })).toThrow(/invalid/);
-      expect(make({ recipient_type: 'stream', stream: [], topic: 'yes' })).toThrow(/invalid/);
+      expect(make({ realm_uri, recipient_type: 'private', pm_users: [1, 2, 3] })).toThrow(
+        /invalid/,
+      );
+      expect(make({ realm_uri, recipient_type: 'stream', stream: [], topic: 'yes' })).toThrow(
+        /invalid/,
+      );
       expect(
         make({
+          realm_uri,
           recipient_type: 'stream',
           stream: { name: 'somewhere' },
           topic: 'no',
@@ -136,15 +144,15 @@ describe('extract iOS notification data', () => {
     test('optional data is typechecked', () => {
       expect(
         make({
-          realm_uri: null,
           ...barebones.stream,
+          realm_uri: null,
         }),
       ).toThrow(/invalid/);
 
       expect(
         make({
-          realm_uri: ['array', 'of', 'string'],
           ...barebones['group PM'],
+          realm_uri: ['array', 'of', 'string'],
         }),
       ).toThrow(/invalid/);
     });

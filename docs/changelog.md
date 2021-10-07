@@ -37,6 +37,366 @@ It doesn't include
 ## Unreleased
 
 
+## 27.171 (2021-09-17)
+
+### Highlights for users
+
+* (iOS) Fixed bug that could cause notifications to make sound with
+  device in silent mode. (#4897)
+
+Plus, like every release, many other fixes and improvements for your Zulip
+experience.
+
+
+### Highlights for developers
+
+* Sentry is now fully set up for Android-native code. (PR #4996)
+
+* The types PmOutbox and StreamOutbox are now distinguished more fully.
+  (PR #4998)
+
+* We now require sender_id, server, and realm_uri in notification data,
+  rejecting forms from servers we no longer support. (PR #4967)
+
+* We've prepared the persistent-data storage code so it's easier to add
+  transaction logic and make it sound: #4841. We've also narrowed the race
+  window to mitigate the symptoms of that issue, by using
+  `AsyncStorage.multiSet` and by separating the serialization step from the
+  storage step. (PR #4694)
+
+* Outbox values now have a stream_id. (PR #5000)
+
+* We've improved the Sentry logging for an unexpected report from the
+  invariant in RawLabel. (PR #5004)
+
+* When reporting API errors to Sentry, the invalid-JSON case is now a bit
+  more explicit. (PR #5002)
+
+* Resolved issues (earliest first): #4897, PR #4996, PR #4998, PR #4967,
+  PR #4934, PR #4694, PR #5000, PR #5004, PR #5002
+
+
+## 27.170 (2021-09-09)
+
+### Highlights for users
+
+* Improved input-focus behavior in the compose box. (#4981)
+* Messages that @-mention you now appear even if you've muted their
+  topic or stream. (#3472)
+* Fixed a "Failed to send" bug when scrolled far up in some message
+  views. (#4973)
+
+Plus, like every release, many other fixes and improvements for your Zulip
+experience.
+
+
+### Highlights for developers
+
+* The Git branch for the project has been renamed from "master" to
+  "main", as part of the shift in the broader Git community toward this more
+  inclusive convention. Please see "#announce > Git branch renamed to ‘main’"
+  on the Zulip community server (CZO) to learn more.
+
+* Upgraded to React Native v0.64! (#4426)
+
+  This introduces two new warnings, and you can ignore them both: one
+  when you run `yarn`, and one when you run Jest. Those will disappear
+  once we use a version of `jest-expo` that targets RN v0.64. (We
+  expect a release from them soon.)
+
+* Resolved issues (earliest first): PR #4973, PR #4831, PR #4981,
+  #4907, #4951, #4909, #3472, #4426, PR #4992
+
+
+## 27.169 (2021-08-30)
+
+### Highlights for users
+
+* Messages are no longer marked as read when scrolling in search,
+  @-mentions, and starred-message views (#4852).
+* We now offer a more complete translation for Chinese (Taiwan) (PR #4285).
+  Many thanks to our kind volunteer translators!
+
+Plus, like every release, many other fixes and improvements for your Zulip
+experience.
+
+
+### Highlights for developers
+
+* (Android) Dropped support for Android versions older than Android 6 (PR
+  #4938).
+* Over a dozen dependencies upgraded across major versions (PRs #4949,
+  #4950, #4952); also other minor/patch upgrades, and some deps removed.
+* Resolved issues (earliest first): #4852, #4890, #4938, #4964, #4285,
+  #4870, #4764, PR #4864
+
+  * Relative to the beta-only release v27.166, also #4921 (cherry-picked
+    into beta-only release v27.167); and PRs #4960, #4959, and #4965
+    (cherry-picked into stable release v27.168).
+
+
+## 27.168 (2021-08-20)
+
+### Highlights for users, vs v27.165 (last prod release)
+
+* (Android) You can now share content from other apps to Zulip. (#117)
+* Fixed a bug where network or server issues could cause an infinite
+  full-screen loading spinner. It now times out after 60 seconds. (#4165)
+* New setting to not mark messages as read when you view them, which is
+  useful for certain workflows. (#4850)
+* Basic support for polls. More to come! (#3205)
+
+Plus, like every release, many other fixes and improvements for your Zulip
+experience.
+
+
+### Highlights for developers, vs v27.167 (last beta)
+
+* Fixed regression from #4165 fix that could kick a user to the
+  pick-account screen at startup. (PR #4965)
+* Filled in missing migration for `state.settings.language` rename
+  made in v27.166. (PR #4959)
+* Resolved issues (earliest first): PR #4960, PR #4959, PR #4965
+
+
+## 27.167 (2021-08-05)
+
+This was a beta-only release.
+
+
+### Highlights for users, vs v27.165 (last prod release)
+
+* (Android) You can now share content from other apps to Zulip. (#117)
+* Fixed a bug where network or server issues could cause an infinite
+  full-screen loading spinner. It now times out after 60 seconds. (#4165)
+* New setting to not mark messages as read when you view them, which is
+  useful for certain workflows. (#4850)
+* Basic support for polls. More to come! (#3205)
+
+Plus, like every release, many other fixes and improvements for your Zulip
+experience.
+
+
+### Highlights for users, vs v27.166 (last beta)
+
+* Fixed a glitch on Android where alert text was the wrong color in dark
+  mode. (#4921)
+
+
+## 27.166 (2021-07-21)
+
+This was a beta-only release. (Note to maintainers: Events from this release
+won't show up in Sentry because of a misconfiguration.)
+
+### Highlights for users
+
+* (Android) You can now share content from other apps to Zulip. (#117)
+* Fixed a bug where network or server issues could cause an infinite
+  full-screen loading spinner. It now times out after 60 seconds. (#4165)
+* New setting to not mark messages as read when you view them, which is
+  useful for certain workflows. (#4850)
+* Basic support for polls. More to come! (#3205)
+
+Plus, like every release, many other fixes and improvements for your Zulip
+experience.
+
+
+### Highlights for developers
+
+* All object types are now exact or explicitly inexact. (#3452)
+* We're now using @react-native-community/push-notifications-ios instead of
+  two different libraries. (#4115)
+* `tools/test jest` now picks Android or iOS codepaths at random, rather
+  than always iOS. (#4795)
+* Resolved issues (latest to earliest): part of #3472 (PR #4807),
+  #117, #4165, #4858, #4850,
+  #4849, #3205, part of #4309 (PR #4817), #4635, #3244, #3452, parts of
+  #4540 and #2366 (PR #4590), #4657, PR #4797, PR #4815, PR #4820, PR #4821,
+  #4795, #4115
+
+  * Relative to the beta-only release v27.164, also #4818, which was
+    cherry-picked into stable release v27.165.
+
+
+## 27.165 (2021-06-24)
+
+### Highlights for users, vs v27.163 (last prod release)
+
+* Initial support for muted users. (#4655)
+* New color scheme to match the new Zulip logo. (PR #4544)
+* (Android) Fixed a bug where the app sometimes opened to a wrong
+  conversation. (#4758)
+* Fixed a glitch where the add-server screen sometimes flashed by before the
+  auth screen. (#4604)
+* (Android) Now available on the Play Store to devices without cameras.
+  (#4722)
+* Fixed bugs with keypad and letter emoji. (#3517, #3395)
+
+Plus, like every release, many other fixes and improvements for your Zulip
+experience.
+
+
+### Highlights for users, vs v27.164 (last beta)
+
+* Fixed crash on opening a notification. (#4818)
+
+
+### Highlights for developers
+
+* Resolved issue: #4818
+
+
+## 27.164 (2021-06-16)
+
+This was a beta-only release.
+
+
+### Highlights for users
+
+* Initial support for muted users. (#4655)
+* New color scheme to match the new Zulip logo. (PR #4544)
+* (Android) Fixed a bug where the app sometimes opened to a wrong
+  conversation. (#4758)
+* Fixed a glitch where the add-server screen sometimes flashed by before the
+  auth screen. (#4604)
+* (Android) Now available on the Play Store to devices without cameras.
+  (#4722)
+* Fixed bugs with keypad and letter emoji. (#3517, #3395)
+
+Plus, like every release, many other fixes and improvements for your Zulip
+experience.
+
+
+### Highlights for developers
+
+* Extended Jest coverage to include Android-only codepaths. (#4700)
+* Ran `yarn upgrade` to take all semver-compatible upgrades, as of
+  2021-06-07. (It had been almost two years since the last one.) (PR #4789)
+* Fixed new iOS build failures. (PRs #4721, #4634)
+* `restart` events can now cause updates to `zulipVersion` and
+  `zulipFeatureLevel` in `state.accounts[0]`. (PR #4707)
+* Increased test coverage of our storage logic, and continued cleaning up
+  `redux-persist`. (#4709)
+* Fixed a bug where `CaughtUp` state was being wrongly overwritten. (PR
+  #4698)
+* In dev mode only, a user-facing string passed to a `_: GetText` will now
+  be highlighted in the UI if it doesn't have an entry in
+  `messages_en.json`. (#4728)
+* Improved documentation for the release process. (PR #4690)
+* We tried out Dependabot and decided not to use it for now. (#4787)
+
+* Resolved issues (latest to earliest): #4801, #4726, PR #4707, #4715,
+  PR #4777, most of #4655, PR #4750, #4758, PR #4761, PR #4717,
+  PR #4710, PR #4749, #4722, #4604, PR #4728, #3540, #4323, #4734,
+  PR #4721, #4264, PR #4716, PR #4634, PR #4697, PR #4544, PR #4698,
+  PR #4686, PR #4689, #3517, #3395
+
+
+## 27.163 (2021-06-04)
+
+### Highlights for users, vs v27.161 (last prod release)
+
+* A message is now marked as read when you scroll to the bottom of it,
+  not just the top. (#4561)
+* Fixed bug with entering the emoji :smile: and :zero:, :one:, …,
+  :ten:. (#4638)
+* (Android) Fixed bug in sharing an image from the lightbox. (#4539)
+* More parts of the app now offer a menu when you make a long press,
+  with options like muting or unmuting a topic. (#3473, #4532)
+
+Plus, like every release, numerous other fixes and improvements for
+your Zulip experience.
+
+
+### Highlights for users, vs v27.162 (last beta)
+
+* Fixed endless loading screen after logging out. (#4723)
+
+
+### Highlights for developers, vs v27.162
+
+* Resolved issues (latest to earliest): #4723
+
+
+## 27.162 (2021-04-20)
+
+(This was a beta-only release.)
+
+
+### Highlights for users
+
+* A message is now marked as read when you scroll to the bottom of it,
+  not just the top. (#4561)
+* Fixed bug with entering the emoji :smile: and :zero:, :one:, …,
+  :ten:. (#4638)
+* (Android) Fixed bug in sharing an image from the lightbox. (#4539)
+* More parts of the app now offer a menu when you make a long press,
+  with options like muting or unmuting a topic. (#3473, #4532)
+
+Plus, like every release, numerous other fixes and improvements for
+your Zulip experience.
+
+
+### Highlights for developers
+
+* Upgraded Flow to v0.126.  In particular this means exact object
+  types work correctly with indexer properties: `{| [string]: Foo |}`.
+  (PR #4518)
+
+* Dropped iOS 11 support; now iOS 12+. (PR #4664)
+
+* (Windows) Fixed issue affecting postinstall script at end of
+  `yarn install`. (#4427)
+
+* Error handling:
+  * Exceptions from inside the WebView now report the browser version
+    in the Sentry event. (#4452)
+  * An error in handling an event now affects just that one event.
+    (PR #4611)
+
+* The `state.unread.streams` model is now an efficient data structure
+  using Immutable.js.  The time we spend handling a stream message
+  being marked as read, in a representative many-unreads case, is
+  about 1.5-2x faster: measured as 150-200ms vs 300ms. (#4438, PR #4685)
+
+* Resolved issues (latest to earliest): PR #4664, PR #4685, #4532,
+  #3473, PR #4468, PR #4654, #4638, #4427, #3996, #4614, #4238,
+  PR #4611, PR #4612, #4539, PR #4561, #4491, #2694, #4595, #4416,
+  #4415, #4425, #4579, PR #4547, #4017, PR #4542, #4438, #4521, #4530,
+  #4496, #4185, PR #4518, #4451, #4210, #4452, #3961
+
+  * Relative to v27.159, also #4587, #4584, #4560, which were
+    cherry-picked into stable releases v27.160 and v27.161.
+
+
+## 27.161 (2021-04-02)
+
+This is a stable release in the v27.159 series, with cherry-picked
+changes including a critical bug fix.
+
+
+### Highlights for users
+
+* Fixed issue that could cause a persistent white screen at startup.
+  (#4587)
+
+
+### Highlights for developers
+
+* Added a React "error boundary" so that white-screen failures show
+  an error message and stack trace. (#4584)
+
+
+## 27.160 (2021-03-29)
+
+This was an Android-only release, with a cherry-picked fix atop v27.159.
+
+
+### Highlights for users
+
+* (Android) Fixed issue causing notifications not to arrive. (#4560)
+
+
 ## 27.159 (2021-02-25)
 
 ### Highlights for users, vs v27.157 (last prod release)
@@ -92,7 +452,7 @@ Zulip experience.
   the app. (PR #4314)
 
 * Resolved issues (latest to earliest): PR #4485, PR #4493, #4453,
-  #4458, #4460, #4405, #4469, PR #4467, #4449, #4267, #4083, #4245,
+  #4458, #4460, #4405, #4469, PR #4467, #4449, #4267, #4083, #4365, #4245,
   #4422, #4369, #4296, #4401, #4297, #4232, #4306, #3133, #4385.
 
 
@@ -508,7 +868,7 @@ experience.
 
 ### Highlights for developers
 
-This is a regular release from the master branch following 26.18.141.
+This is a regular release from the main branch following 26.18.141.
 In addition to the changes mentioned here, it includes the changes
 that were cherry-picked for 26.19.142.
 

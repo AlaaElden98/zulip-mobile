@@ -6,7 +6,6 @@ import {
   APP_ORIENTATION,
   DEBUG_FLAG_TOGGLE,
   ACCOUNT_SWITCH,
-  REALM_ADD,
   ACCOUNT_REMOVE,
   LOGIN_SUCCESS,
   LOGOUT,
@@ -19,6 +18,7 @@ import {
   MESSAGE_FETCH_COMPLETE,
   INITIAL_FETCH_START,
   INITIAL_FETCH_COMPLETE,
+  INITIAL_FETCH_ABORT,
   SETTINGS_CHANGE,
   DRAFT_UPDATE,
   PRESENCE_RESPONSE,
@@ -47,6 +47,7 @@ import {
   EVENT_ALERT_WORDS,
   INIT_TOPICS,
   EVENT_MUTED_TOPICS,
+  EVENT_MUTED_USERS,
   EVENT_REALM_FILTERS,
   EVENT_USER_REMOVE,
   EVENT_USER_UPDATE,
@@ -55,9 +56,17 @@ import {
   EVENT_SUBMESSAGE,
   EVENT_SUBSCRIPTION,
   EVENT,
+  DISMISS_SERVER_COMPAT_NOTICE,
 } from './actionConstants';
 
-import type { MessageEvent, PresenceEvent, StreamEvent, SubmessageEvent } from './api/eventTypes';
+import type {
+  MessageEvent,
+  MutedUsersEvent,
+  PresenceEvent,
+  StreamEvent,
+  SubmessageEvent,
+  RestartEvent,
+} from './api/eventTypes';
 
 import type {
   Orientation,
@@ -83,7 +92,6 @@ import type {
   UserId,
   UserStatusEvent,
 } from './types';
-import type { ZulipVersion } from './utils/zulipVersion';
 
 /**
  * Dispatched by redux-persist when the stored state is loaded.
@@ -102,13 +110,13 @@ import type { ZulipVersion } from './utils/zulipVersion';
  */
 type RehydrateAction = {|
   type: typeof REHYDRATE,
-  payload: GlobalState | { accounts: null } | {||} | void,
+  payload: $ReadOnly<$ObjMap<$Rest<GlobalState, { ... }>, <V>(V) => V | null>> | void,
   error: mixed,
 |};
 
 type AppOnlineAction = {|
   type: typeof APP_ONLINE,
-  isOnline: boolean,
+  isOnline: boolean | null,
 |};
 
 type DeadQueueAction = {|
@@ -126,16 +134,13 @@ type DebugFlagToggleAction = {|
   value: boolean,
 |};
 
-type AccountSwitchAction = {|
-  type: typeof ACCOUNT_SWITCH,
-  index: number,
+type DismissServerCompatNoticeAction = {|
+  type: typeof DISMISS_SERVER_COMPAT_NOTICE,
 |};
 
-type RealmAddAction = {|
-  type: typeof REALM_ADD,
-  realm: URL,
-  zulipFeatureLevel: number,
-  zulipVersion: ZulipVersion,
+export type AccountSwitchAction = {|
+  type: typeof ACCOUNT_SWITCH,
+  index: number,
 |};
 
 type AccountRemoveAction = {|
@@ -143,7 +148,7 @@ type AccountRemoveAction = {|
   index: number,
 |};
 
-type LoginSuccessAction = {|
+export type LoginSuccessAction = {|
   type: typeof LOGIN_SUCCESS,
   realm: URL,
   email: string,
@@ -154,10 +159,9 @@ type LogoutAction = {|
   type: typeof LOGOUT,
 |};
 
-type RealmInitAction = {|
+export type RealmInitAction = {|
   type: typeof REALM_INIT,
   data: InitialData,
-  zulipVersion: ZulipVersion,
 |};
 
 /** We learned the device token from the system.  See `SessionState`. */
@@ -179,7 +183,7 @@ type AckPushTokenAction = {|
   pushToken: string,
 |};
 
-type MessageFetchStartAction = {|
+export type MessageFetchStartAction = {|
   type: typeof MESSAGE_FETCH_START,
   narrow: Narrow,
   numBefore: number,
@@ -189,7 +193,7 @@ type MessageFetchStartAction = {|
 /**
  * Any unexpected failure in a message fetch.
  *
- * Includes internal server errors and any errors we throw when
+ * Includes request timeout errors and any errors we throw when
  * validating and reshaping the server data at the edge.
  *
  * In an ideal crunchy-shell world [1], none of these will be thrown
@@ -198,7 +202,7 @@ type MessageFetchStartAction = {|
  * that world, so, we take care to catch those errors and dispatch
  * this action there too. See discussion [2] for implementation notes.
  *
- * [1] https://github.com/zulip/zulip-mobile/blob/master/docs/architecture/crunchy-shell.md
+ * [1] https://github.com/zulip/zulip-mobile/blob/main/docs/architecture/crunchy-shell.md
  * [2] https://chat.zulip.org/#narrow/stream/243-mobile-team/topic/.23M4156.20Message.20List.20placeholders/near/937480
  */
 type MessageFetchErrorAction = {|
@@ -210,7 +214,7 @@ type MessageFetchErrorAction = {|
   error: Error,
 |};
 
-type MessageFetchCompleteAction = {|
+export type MessageFetchCompleteAction = {|
   type: typeof MESSAGE_FETCH_COMPLETE,
   messages: Message[],
   narrow: Narrow,
@@ -228,6 +232,19 @@ type InitialFetchStartAction = {|
 
 type InitialFetchCompleteAction = {|
   type: typeof INITIAL_FETCH_COMPLETE,
+|};
+
+export type InitialFetchAbortReason = 'server' | 'network' | 'timeout' | 'unexpected';
+
+/**
+ * Notify Redux that we've given up on the initial fetch.
+ *
+ * Not for unrecoverable errors, like ApiErrors, which indicate that we
+ * tried and failed, not that we gave up trying.
+ */
+type InitialFetchAbortAction = {|
+  type: typeof INITIAL_FETCH_ABORT,
+  reason: InitialFetchAbortReason,
 |};
 
 type ServerEvent = {|
@@ -301,7 +318,7 @@ type EventSubscriptionPeerRemoveAction = {|
 
 type GenericEventAction = {|
   type: typeof EVENT,
-  event: StreamEvent,
+  event: StreamEvent | RestartEvent,
 |};
 
 type EventNewMessageAction = {|
@@ -407,7 +424,7 @@ type EventUpdateMessageFlagsAction = {|
   allMessages: MessagesState,
   flag: string,
   messages: number[],
-  operation: 'add' | 'remove',
+  op: 'add' | 'remove',
 |};
 
 type EventUserAddAction = {|
@@ -434,6 +451,11 @@ type EventMutedTopicsAction = {|
   ...ServerEvent,
   type: typeof EVENT_MUTED_TOPICS,
   muted_topics: MuteState,
+|};
+
+type EventMutedUsersAction = {|
+  ...MutedUsersEvent,
+  type: typeof EVENT_MUTED_USERS,
 |};
 
 type EventUserGroupAddAction = {|
@@ -520,6 +542,7 @@ export type EventAction =
   | EventAlertWordsAction
   | EventMessageDeleteAction
   | EventMutedTopicsAction
+  | EventMutedUsersAction
   | EventNewMessageAction
   | EventSubmessageAction
   | EventPresenceAction
@@ -535,10 +558,7 @@ export type EventAction =
   | EventTypingAction
   | EventUserAction
   | EventUserGroupAction
-  | EventUserStatusUpdateAction
-  // Dummy actions.
-  | {| type: 'ignore' |}
-  | {| type: 'unknown', event: { ... } |};
+  | EventUserStatusUpdateAction;
 
 type SettingsChangeAction = {|
   type: typeof SETTINGS_CHANGE,
@@ -592,14 +612,13 @@ type InitTopicsAction = {|
 // The `Action` union type.
 //
 
-type AccountAction =
-  | AccountSwitchAction
-  | RealmAddAction
-  | AccountRemoveAction
-  | LoginSuccessAction
-  | LogoutAction;
+type AccountAction = AccountSwitchAction | AccountRemoveAction | LoginSuccessAction | LogoutAction;
 
-type LoadingAction = DeadQueueAction | InitialFetchStartAction | InitialFetchCompleteAction;
+type LoadingAction =
+  | DeadQueueAction
+  | InitialFetchStartAction
+  | InitialFetchCompleteAction
+  | InitialFetchAbortAction;
 
 type MessageAction = MessageFetchStartAction | MessageFetchErrorAction | MessageFetchCompleteAction;
 
@@ -613,6 +632,7 @@ type SessionAction =
   | AppOrientationAction
   | GotPushTokenAction
   | DebugFlagToggleAction
+  | DismissServerCompatNoticeAction
   | ToggleOutboxSendingAction;
 
 /** Covers all actions we ever `dispatch`. */

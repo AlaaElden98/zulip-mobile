@@ -1,28 +1,24 @@
 /* @flow strict-local */
 
-import type { Message } from '../../types';
 import { reducer } from '../unreadModel';
+import type { UnreadState } from '../unreadModelTypes';
+import type { Stream } from '../../api/apiTypes';
 import * as eg from '../../__tests__/lib/exampleData';
 
-export const initialState = reducer(
+export const initialState: UnreadState = reducer(
   undefined,
   ({ type: eg.randString() }: $FlowFixMe),
   eg.baseReduxState,
 );
 
-export const mkMessageAction = (message: Message) => ({
-  ...eg.eventNewMessageActionBase,
-  message: { ...message, flags: message.flags ?? [] },
-});
-
-export const stream0 = { ...eg.makeStream({ name: 'stream 0' }), stream_id: 0 };
-export const stream2 = { ...eg.makeStream({ name: 'stream 2' }), stream_id: 2 };
+export const stream0: Stream = { ...eg.makeStream({ name: 'stream 0' }), stream_id: 0 };
+export const stream2: Stream = { ...eg.makeStream({ name: 'stream 2' }), stream_id: 2 };
 
 const [user0, user1, user2, user3, user4, user5] = [0, 1, 2, 3, 4, 5].map(user_id =>
   eg.makeUser({ user_id }),
 );
 
-export const selectorBaseState = (() => {
+export const selectorBaseState: UnreadState = (() => {
   // We take user1 to be self.
   // It might be convenient to convert this to the standard eg.selfUser,
   // and use eg.reduxStatePlus.  Until then, this just minimizes how much
@@ -53,7 +49,7 @@ export const selectorBaseState = (() => {
     eg.pmMessageFromTo(user4, [user1, user5], { id: 24 }),
     eg.pmMessageFromTo(user4, [user1, user5], { id: 25 }),
   ]) {
-    state = reducer(state, mkMessageAction(message), globalState);
+    state = reducer(state, eg.mkActionEventNewMessage(message), globalState);
   }
   return state;
 })();

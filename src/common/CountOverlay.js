@@ -1,6 +1,7 @@
 /* @flow strict-local */
 
 import React, { PureComponent } from 'react';
+import type { Node } from 'react';
 import { View } from 'react-native';
 
 import { ComponentWithOverlay, UnreadCount } from '.';
@@ -13,12 +14,12 @@ const styles = createStyleSheet({
 });
 
 type Props = $ReadOnly<{|
-  children: React$Node,
+  children: Node,
   unreadCount: number,
 |}>;
 
 export default class CountOverlay extends PureComponent<Props> {
-  render() {
+  render(): Node {
     const { children, unreadCount } = this.props;
 
     return (

@@ -20,8 +20,8 @@ data class Identity(
     /// The realm's own URL/URI.  This is a real, absolute URL which is
     /// the base for all URLs a client uses with this realm.  It corresponds
     /// to `realm_uri` in the `server_settings` API response:
-    ///   https://zulip.com/api/server-settings
-    val realmUri: URL?,
+    ///   https://zulip.com/api/get-server-settings
+    val realmUri: URL,
 
     /// This user's ID within the server.  Useful mainly in the case where
     /// the user has multiple accounts in the same org.
@@ -32,7 +32,7 @@ data class Identity(
  * Data about the Zulip user that sent a message.
  */
 data class Sender(
-    val id: Int?,
+    val id: Int,
     val email: String,
     val avatarURL: URL,
     val fullName: String
@@ -95,7 +95,7 @@ sealed class FcmMessage {
  * See `FcmMessage` for discussion.
  */
 data class MessageFcmMessage(
-    val identity: Identity?,
+    val identity: Identity,
     val sender: Sender,
     val zulipMessageId: Int,
     val recipient: Recipient,
@@ -111,7 +111,7 @@ data class MessageFcmMessage(
      */
     fun dataForOpen(): Bundle = Bundle().apply {
         // NOTE: Keep the JS-side type definition in sync with this code.
-        identity?.realmUri?.let { putString("realm_uri", it.toString()) }
+        identity.realmUri.let { putString("realm_uri", it.toString()) }
         when (recipient) {
             is Recipient.Stream -> {
                 putString("recipient_type", "stream")
@@ -149,10 +149,7 @@ data class MessageFcmMessage(
             return MessageFcmMessage(
                 identity = extractIdentity(data),
                 sender = Sender(
-                    // sender_id was added in server version 1.8.0
-                    // (released 2018-04-16; commit 014900c2e).
-                    id = data["sender_id"]?.parseInt("sender_id"),
-
+                    id = data.require("sender_id").parseInt("sender_id"),
                     email = data.require("sender_email"),
                     avatarURL = avatarURL,
                     fullName = data.require("sender_full_name")
@@ -182,46 +179,30 @@ data class RemoveFcmMessage(
             }
 
             return RemoveFcmMessage(
-                // When the server first started sending `remove` messages at all
-                // (commit bc43eefbf, released in 1.9.0), it already included
-                // `server`, `realm_id`, and `realm_uri`.  So we can insist on an
-                // Identity here in the "crunchy shell", and reduce null-checks in
-                // the "soft center".
-                identity = extractIdentity(data)
-                    ?: throw FcmMessageParseException("missing expected field: server"),
-
+                identity = extractIdentity(data),
                 messageIds = messageIds
             )
         }
     }
 }
 
-private fun extractIdentity(data: Map<String, String>): Identity? =
-    data["server"]?.let { serverHost ->
-        Identity(
-            // `server` was added in server version 1.8.0
-            // (released 2018-04-16; commit 014900c2e).
-            serverHost = serverHost,
+private fun extractIdentity(data: Map<String, String>): Identity =
+    Identity(
+        serverHost = data.require("server"),
+        realmId = data.require("realm_id").parseInt("realm_id"),
+        realmUri = data.require("realm_uri").parseUrl("realm_uri"),
 
-            // `realm_id` was added in the same commit as `server`.
-            realmId = data.require("realm_id").parseInt("realm_id"),
+        // Server versions from 1.6.0 through 2.0.0 (and possibly earlier
+        // and later) send the user's email address, as `user`.  We *could*
+        // use this as a substitute for `user_id` when that's missing...
+        // but it'd be inherently buggy, and the bug it'd introduce seems
+        // likely to affect more users than the bug it'd fix.  So just ignore.
+        // (data["user"] ignored)
 
-            // `realm_uri` was added in server version 1.9.0
-            // (released 2018-11-06; commit 5f8d193bb).
-            realmUri = data["realm_uri"]?.parseUrl("realm_uri"),
-
-            // Server versions from 1.6.0 through 2.0.0 (and possibly earlier
-            // and later) send the user's email address, as `user`.  We *could*
-            // use this as a substitute for `user_id` when that's missing...
-            // but it'd be inherently buggy, and the bug it'd introduce seems
-            // likely to affect more users than the bug it'd fix.  So just ignore.
-            // (data["user"] ignored)
-
-            // As of 2019-03 (with 2.0.0 the latest release), the server
-            // is expected to start sending this soon.  See zulip/zulip#11961 .
-            userId = data["user_id"]?.parseInt("user_id")
-        )
-    }
+        // `user_id` was added in server version 2.1.0 (released 2019-12-12;
+        // commit 447a517e6, PR #12172.)
+        userId = data["user_id"]?.parseInt("user_id")
+    )
 
 private fun Map<String, String>.require(key: String): String =
     this[key] ?: throw FcmMessageParseException("missing expected field: $key")

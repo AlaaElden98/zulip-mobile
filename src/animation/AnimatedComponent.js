@@ -1,53 +1,60 @@
 /* @flow strict-local */
-import React, { PureComponent } from 'react';
-import type { Node as React$Node } from 'react';
+import React, { useRef, useCallback, useEffect } from 'react';
+import type { Node } from 'react';
 import { Animated, Easing } from 'react-native';
 
+import { usePrevious } from '../reactUtils';
 import type { Style } from '../types';
 
 type Props = $ReadOnly<{|
   stylePropertyName: string,
   fullValue: number,
-  children: React$Node,
+  children: Node,
   style?: Style,
-  visible: boolean,
-  useNativeDriver: boolean,
-  delay: number,
+  visible?: boolean,
+  useNativeDriver?: boolean,
+  delay?: number,
 |}>;
 
-export default class AnimatedComponent extends PureComponent<Props> {
-  static defaultProps = {
-    visible: true,
-    useNativeDriver: true,
-    delay: 0,
-  };
+/**
+ * Animates the specified style property on visibility change.
+ */
+export default function AnimatedComponent(props: Props): Node {
+  const {
+    visible = true,
+    useNativeDriver = true,
+    delay = 0,
+    fullValue,
+    children,
+    stylePropertyName,
+    style,
+  } = props;
 
-  animatedValue = new Animated.Value(0);
+  const prevVisible = usePrevious(visible);
 
-  animate() {
-    Animated.timing(this.animatedValue, {
-      toValue: this.props.visible ? this.props.fullValue : 0,
-      delay: this.props.delay,
+  const targetValue = visible ? fullValue : 0;
+
+  const animatedValue = useRef(new Animated.Value(targetValue));
+
+  const animate = useCallback(() => {
+    Animated.timing(animatedValue.current, {
+      toValue: targetValue,
+      delay,
       duration: 300,
-      useNativeDriver: this.props.useNativeDriver,
+      useNativeDriver,
       easing: Easing.out(Easing.poly(4)),
     }).start();
-  }
+  }, [delay, targetValue, useNativeDriver]);
 
-  componentDidMount() {
-    this.animate();
-  }
+  useEffect(() => {
+    if (prevVisible !== undefined && prevVisible !== visible) {
+      animate();
+    }
+  }, [animate, prevVisible, visible]);
 
-  componentDidUpdate() {
-    this.animate();
-  }
+  const animatedStyle = {
+    [stylePropertyName]: animatedValue.current,
+  };
 
-  render() {
-    const { children, stylePropertyName, style } = this.props;
-    const animatedStyle = {
-      [stylePropertyName]: this.animatedValue,
-    };
-
-    return <Animated.View style={[animatedStyle, style]}>{children}</Animated.View>;
-  }
+  return <Animated.View style={[animatedStyle, style]}>{children}</Animated.View>;
 }

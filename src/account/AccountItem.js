@@ -1,10 +1,12 @@
 /* @flow strict-local */
 import React from 'react';
+import type { Node } from 'react';
 import { View } from 'react-native';
 
 import { BRAND_COLOR, createStyleSheet } from '../styles';
-import { RawLabel, Touchable } from '../common';
+import { RawLabel, Touchable, Label } from '../common';
 import { IconDone, IconTrash } from '../common/Icons';
+import type { AccountStatus } from './accountsSelectors';
 
 const styles = createStyleSheet({
   wrapper: {
@@ -13,7 +15,6 @@ const styles = createStyleSheet({
   accountItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'hsla(177, 70%, 47%, 0.1)',
     borderRadius: 4,
     height: 72,
   },
@@ -26,7 +27,6 @@ const styles = createStyleSheet({
     marginLeft: 16,
   },
   text: {
-    color: BRAND_COLOR,
     fontWeight: 'bold',
     marginVertical: 2,
   },
@@ -34,26 +34,51 @@ const styles = createStyleSheet({
     padding: 12,
     margin: 12,
   },
+  signedOutText: {
+    fontStyle: 'italic',
+    color: 'gray',
+    marginVertical: 2,
+  },
 });
 
 type Props = $ReadOnly<{|
   index: number,
-  email: string,
-  realm: URL,
-  onSelect: (index: number) => void,
-  onRemove: (index: number) => void,
-  showDoneIcon: boolean,
+  account: AccountStatus,
+  onSelect: (index: number) => Promise<void> | void,
+  onRemove: (index: number) => Promise<void> | void,
 |}>;
 
-export default function AccountItem(props: Props) {
-  const { email, realm, showDoneIcon } = props;
+export default function AccountItem(props: Props): Node {
+  const { email, realm, isLoggedIn } = props.account;
+
+  // Don't show the "remove account" button (the "trash" icon) for the
+  // active account when it's logged in.  This prevents removing it when the
+  // main app UI, relying on that account's data, may be on the nav stack.
+  // See `getHaveServerData`.
+  const showDoneIcon = props.index === 0 && isLoggedIn;
+
+  const backgroundItemColor = isLoggedIn ? 'hsla(177, 70%, 47%, 0.1)' : 'hsla(0,0%,50%,0.1)';
+  const textColor = isLoggedIn ? BRAND_COLOR : 'gray';
 
   return (
     <Touchable style={styles.wrapper} onPress={() => props.onSelect(props.index)}>
-      <View style={[styles.accountItem, showDoneIcon && styles.selectedAccountItem]}>
+      <View
+        style={[
+          styles.accountItem,
+          showDoneIcon && styles.selectedAccountItem,
+          { backgroundColor: backgroundItemColor },
+        ]}
+      >
         <View style={styles.details}>
-          <RawLabel style={styles.text} text={email} numberOfLines={1} />
-          <RawLabel style={styles.text} text={realm.toString()} numberOfLines={1} />
+          <RawLabel style={[styles.text, { color: textColor }]} text={email} numberOfLines={1} />
+          <RawLabel
+            style={[styles.text, { color: textColor }]}
+            text={realm.toString()}
+            numberOfLines={1}
+          />
+          {!isLoggedIn && (
+            <Label style={styles.signedOutText} text="Signed out" numberOfLines={1} />
+          )}
         </View>
         {!showDoneIcon ? (
           <IconTrash

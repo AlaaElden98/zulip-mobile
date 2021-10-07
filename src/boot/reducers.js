@@ -1,8 +1,5 @@
 /* @flow strict-local */
-import { enableBatching } from 'redux-batched-actions';
-
 import config from '../config';
-import { NULL_OBJECT } from '../nullObjects';
 import type { Action, GlobalState, MigrationsState } from '../types';
 
 import accounts from '../account/accountsReducer';
@@ -14,6 +11,7 @@ import flags from '../chat/flagsReducer';
 import narrows from '../chat/narrowsReducer';
 import messages from '../message/messagesReducer';
 import mute from '../mute/muteReducer';
+import mutedUsers from '../mute/mutedUsersReducer';
 import outbox from '../outbox/outboxReducer';
 import { reducer as pmConversations } from '../pm-conversations/pmConversationsModel';
 import presence from '../presence/presenceReducer';
@@ -30,11 +28,13 @@ import userStatus from '../user-status/userStatusReducer';
 import users from '../users/usersReducer';
 import timing from '../utils/timing';
 
-const migrations = (state: MigrationsState = NULL_OBJECT): MigrationsState => state;
+// The `Object.freeze` is to work around a Flow issue:
+//   https://github.com/facebook/flow/issues/2386#issuecomment-695064325
+const migrations = (state: MigrationsState = Object.freeze({})): MigrationsState => state;
 
 const { enableReduxSlowReducerWarnings, slowReducersThreshold } = config;
 
-function maybeLogSlowReducer(action, key, startMs, endMs) {
+function maybeLogSlowReducer(action, key: $Keys<GlobalState>, startMs, endMs) {
   if (endMs - startMs >= slowReducersThreshold) {
     timing.add({ text: `${action.type} @ ${key}`, startMs, endMs });
   }
@@ -52,8 +52,8 @@ function applyReducer<Key: $Keys<GlobalState>, State>(
     startMs = Date.now();
   }
 
-  /* $FlowFixMe - We make a small lie about the type, pretending that
-     globalState is not void.
+  /* $FlowFixMe[incompatible-type] - We make a small lie about the type,
+     pretending that globalState is not void.
 
      This is OK because it's only ever void at the initialization action,
      and no reducer should do anything there other than return its initial
@@ -78,7 +78,7 @@ function applyReducer<Key: $Keys<GlobalState>, State>(
 }
 
 // Based on Redux upstream's combineReducers.
-const combinedReducer = (state: void | GlobalState, action: Action): GlobalState => {
+export default (state: void | GlobalState, action: Action): GlobalState => {
   // prettier-ignore
   const nextState = {
     migrations: applyReducer('migrations', migrations, state?.migrations, action, state),
@@ -91,6 +91,7 @@ const combinedReducer = (state: void | GlobalState, action: Action): GlobalState
     messages: applyReducer('messages', messages, state?.messages, action, state),
     narrows: applyReducer('narrows', narrows, state?.narrows, action, state),
     mute: applyReducer('mute', mute, state?.mute, action, state),
+    mutedUsers: applyReducer('mutedUsers', mutedUsers, state?.mutedUsers, action, state),
     outbox: applyReducer('outbox', outbox, state?.outbox, action, state),
     pmConversations: applyReducer('pmConversations', pmConversations, state?.pmConversations, action, state),
     presence: applyReducer('presence', presence, state?.presence, action, state),
@@ -113,5 +114,3 @@ const combinedReducer = (state: void | GlobalState, action: Action): GlobalState
 
   return nextState;
 };
-
-export default enableBatching(combinedReducer);

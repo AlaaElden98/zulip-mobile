@@ -1,14 +1,17 @@
 /* @flow strict-local */
-import React, { PureComponent } from 'react';
+import React, { useCallback } from 'react';
+import type { Node } from 'react';
 import { FlatList } from 'react-native';
+import { useDispatch, useSelector } from '../react-redux';
 
-import type { Dispatch, PmConversationData, UserOrBot } from '../types';
+import type { PmConversationData, UserOrBot } from '../types';
 import { createStyleSheet } from '../styles';
 import { type PmKeyUsers } from '../utils/recipient';
 import { pm1to1NarrowFromUser, pmNarrowFromUsers } from '../utils/narrow';
 import UserItem from '../users/UserItem';
 import GroupPmConversationItem from './GroupPmConversationItem';
 import { doNarrow } from '../actions';
+import { getMutedUsers } from '../selectors';
 
 const styles = createStyleSheet({
   list: {
@@ -18,52 +21,59 @@ const styles = createStyleSheet({
 });
 
 type Props = $ReadOnly<{|
-  dispatch: Dispatch,
   conversations: PmConversationData[],
 |}>;
 
 /**
  * A list describing all PM conversations.
  * */
-export default class PmConversationList extends PureComponent<Props> {
-  handleUserNarrow = (user: UserOrBot) => {
-    this.props.dispatch(doNarrow(pm1to1NarrowFromUser(user)));
-  };
+export default function PmConversationList(props: Props): Node {
+  const dispatch = useDispatch();
 
-  handleGroupNarrow = (users: PmKeyUsers) => {
-    this.props.dispatch(doNarrow(pmNarrowFromUsers(users)));
-  };
+  const handleUserNarrow = useCallback(
+    (user: UserOrBot) => {
+      dispatch(doNarrow(pm1to1NarrowFromUser(user)));
+    },
+    [dispatch],
+  );
 
-  render() {
-    const { conversations } = this.props;
+  const handleGroupNarrow = useCallback(
+    (users: PmKeyUsers) => {
+      dispatch(doNarrow(pmNarrowFromUsers(users)));
+    },
+    [dispatch],
+  );
 
-    return (
-      <FlatList
-        style={styles.list}
-        initialNumToRender={20}
-        data={conversations}
-        keyExtractor={item => item.key}
-        renderItem={({ item }) => {
-          const users = item.keyRecipients;
-          if (users.length === 1) {
-            return (
-              <UserItem
-                userId={users[0].user_id}
-                unreadCount={item.unread}
-                onPress={this.handleUserNarrow}
-              />
-            );
+  const { conversations } = props;
+  const mutedUsers = useSelector(getMutedUsers);
+
+  return (
+    <FlatList
+      style={styles.list}
+      initialNumToRender={20}
+      data={conversations}
+      keyExtractor={item => item.key}
+      renderItem={({ item }) => {
+        const users = item.keyRecipients;
+        if (users.length === 1) {
+          const user_id = users[0].user_id;
+          if (mutedUsers.has(user_id)) {
+            return null;
           } else {
             return (
-              <GroupPmConversationItem
-                users={users}
-                unreadCount={item.unread}
-                onPress={this.handleGroupNarrow}
-              />
+              <UserItem userId={user_id} unreadCount={item.unread} onPress={handleUserNarrow} />
             );
           }
-        }}
-      />
-    );
-  }
+        } else {
+          return (
+            <GroupPmConversationItem
+              users={users}
+              unreadCount={item.unread}
+              onPress={handleGroupNarrow}
+            />
+          );
+        }
+      }}
+    />
+  );
 }

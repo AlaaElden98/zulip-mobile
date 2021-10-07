@@ -6,6 +6,8 @@ import Immutable from 'immutable';
 import type {
   CrossRealmBot,
   Message,
+  PmMessage,
+  StreamMessage,
   PmRecipientUser,
   Reaction,
   Stream,
@@ -15,8 +17,19 @@ import type {
   UserId,
 } from '../../api/modelTypes';
 import { makeUserId } from '../../api/idTypes';
-import type { Action, GlobalState, MessagesState, RealmState } from '../../reduxTypes';
-import type { Auth, Account, Outbox } from '../../types';
+import type {
+  AccountSwitchAction,
+  LoginSuccessAction,
+  RealmInitAction,
+  MessageFetchStartAction,
+  MessageFetchCompleteAction,
+  Action,
+  GlobalState,
+  CaughtUpState,
+  MessagesState,
+  RealmState,
+} from '../../reduxTypes';
+import type { Auth, Account, StreamOutbox } from '../../types';
 import { UploadedAvatarURL } from '../../utils/avatar';
 import { ZulipVersion } from '../../utils/zulipVersion';
 import {
@@ -30,6 +43,13 @@ import {
 import rootReducer from '../../boot/reducers';
 import { authOfAccount } from '../../account/accountMisc';
 import { HOME_NARROW } from '../../utils/narrow';
+import type { BackgroundData } from '../../webview/MessageList';
+import {
+  getSettings,
+  getStreamsById,
+  getStreamsByName,
+  getSubscriptionsById,
+} from '../../selectors';
 
 /* ========================================================================
  * Utilities
@@ -81,13 +101,13 @@ const makeUniqueRandInt = (itemsType: string, end: number): (() => number) => {
 };
 
 /** Return a string that's almost surely different every time. */
-export const randString = () => randInt(2 ** 54).toString(36);
+export const randString = (): string => randInt(2 ** 54).toString(36);
 
 const intRange = (start, len) => Array.from({ length: len }, (k, i) => i + start);
 
 /** A string with diverse characters to exercise encoding/decoding bugs. */
 /* eslint-disable prefer-template */
-export const diverseCharacters =
+export const diverseCharacters: string =
   // The whole range of lowest code points, including control codes
   // and ASCII punctuation like `"` and `&` used in various syntax...
   String.fromCharCode(...intRange(0, 0x100))
@@ -156,9 +176,9 @@ export const makeCrossRealmBot = (
     is_bot: true,
   });
 
-export const realm = new URL('https://zulip.example.org');
+export const realm: URL = new URL('https://zulip.example.org');
 
-export const zulipVersion = new ZulipVersion('2.1.0-234-g7c3acf4');
+export const zulipVersion: ZulipVersion = new ZulipVersion('2.1.0-234-g7c3acf4');
 
 export const zulipFeatureLevel = 1;
 
@@ -168,6 +188,7 @@ export const makeAccount = (
     email?: string,
     realm?: URL,
     apiKey?: string,
+    userId?: UserId | null,
     zulipFeatureLevel?: number | null,
     zulipVersion?: ZulipVersion | null,
     ackedPushToken?: string | null,
@@ -175,6 +196,7 @@ export const makeAccount = (
 ): Account => {
   const {
     user = makeUser({ name: randString() }),
+    userId = user.user_id,
     email = user.email,
     realm: realmInner = realm,
     apiKey = randString() + randString(),
@@ -184,6 +206,7 @@ export const makeAccount = (
   } = args;
   return deepFreeze({
     realm: realmInner,
+    userId,
     email,
     apiKey,
     zulipFeatureLevel: zulipFeatureLevelInner,
@@ -242,12 +265,14 @@ export const stream: Stream = makeStream({
 });
 
 /** A subscription, by default to eg.stream. */
-export const makeSubscription = (args: {| stream?: Stream |} = Object.freeze({})): Subscription => {
-  const { stream: streamInner = stream } = args;
+export const makeSubscription = (
+  args: {| stream?: Stream, in_home_view?: boolean |} = Object.freeze({}),
+): Subscription => {
+  const { stream: streamInner = stream, in_home_view } = args;
   return deepFreeze({
     ...streamInner,
     color: '#123456',
-    in_home_view: true,
+    in_home_view: in_home_view ?? true,
     pin_to_top: false,
     audible_notifications: false,
     desktop_notifications: false,
@@ -296,7 +321,6 @@ const messagePropertiesBase = deepFreeze({
   is_me_message: false,
   // last_edit_timestamp omitted
   reactions: [],
-  subject_links: [],
   submessages: [],
 });
 
@@ -322,13 +346,18 @@ const randMessageId: () => number = makeUniqueRandInt('message ID', 10000000);
  * A PM, by default a 1:1 from eg.otherUser to eg.selfUser.
  *
  * Beware! These values may not be representative.
+ *
+ * NB that the resulting value has no `flags` property.  This matches what
+ * we expect in `state.messages`, but not some other contexts; see comment
+ * on the `flags` property of `Message`.  For use in an `EVENT_NEW_MESSAGE`
+ * action, pass to `mkActionEventNewMessage`.
  */
 export const pmMessage = (args?: {|
-  ...$Rest<Message, { ... }>,
+  ...$Rest<PmMessage, { ... }>,
   sender?: User,
   recipients?: User[],
   sender_id?: number, // accept a plain number, for convenience in tests
-|}): Message => {
+|}): PmMessage => {
   // The `Object.freeze` is to work around a Flow issue:
   //   https://github.com/facebook/flow/issues/2386#issuecomment-695064325
   const {
@@ -338,7 +367,7 @@ export const pmMessage = (args?: {|
     ...extra
   } = args ?? Object.freeze({});
 
-  const baseMessage: Message = {
+  const baseMessage: PmMessage = {
     ...messagePropertiesBase,
     ...messagePropertiesFromSender(sender),
 
@@ -348,8 +377,6 @@ export const pmMessage = (args?: {|
     // in real messages.  (See comments on the Message type.)
     display_recipient: recipients.map(displayRecipientFromUser),
     id: randMessageId(),
-    recipient_id: 2342,
-    stream_id: -1,
     subject: '',
     timestamp: 1556579160,
     type: 'private',
@@ -361,13 +388,15 @@ export const pmMessage = (args?: {|
   });
 };
 
-export const pmMessageFromTo = (from: User, to: User[], extra?: $Rest<Message, { ... }>): Message =>
-  pmMessage({ sender: from, recipients: [from, ...to], ...extra });
+export const pmMessageFromTo = (
+  from: User,
+  to: User[],
+  extra?: $Rest<PmMessage, { ... }>,
+): PmMessage => pmMessage({ sender: from, recipients: [from, ...to], ...extra });
 
 const messagePropertiesFromStream = (stream1: Stream) => {
   const { stream_id, name: display_recipient } = stream1;
   return deepFreeze({
-    recipient_id: 2567,
     display_recipient,
     stream_id,
   });
@@ -377,17 +406,22 @@ const messagePropertiesFromStream = (stream1: Stream) => {
  * A stream message, by default in eg.stream sent by eg.otherUser.
  *
  * Beware! These values may not be representative.
+ *
+ * NB that the resulting value has no `flags` property.  This matches what
+ * we expect in `state.messages`, but not some other contexts; see comment
+ * on the `flags` property of `Message`.  For use in an `EVENT_NEW_MESSAGE`
+ * action, pass to `mkActionEventNewMessage`.
  */
 export const streamMessage = (args?: {|
-  ...$Rest<Message, { ... }>,
+  ...$Rest<StreamMessage, { ... }>,
   stream?: Stream,
   sender?: User,
-|}): Message => {
+|}): StreamMessage => {
   // The `Object.freeze` is to work around a Flow issue:
   //   https://github.com/facebook/flow/issues/2386#issuecomment-695064325
   const { stream: streamInner = stream, sender = otherUser, ...extra } = args ?? Object.freeze({});
 
-  const baseMessage: Message = {
+  const baseMessage: StreamMessage = {
     ...messagePropertiesBase,
     ...messagePropertiesFromSender(sender),
     ...messagePropertiesFromStream(streamInner),
@@ -396,6 +430,7 @@ export const streamMessage = (args?: {|
     content_type: 'text/markdown',
     id: randMessageId(),
     subject: 'example topic',
+    subject_links: [],
     timestamp: 1556579727,
     type: 'stream',
   };
@@ -413,35 +448,37 @@ export const makeMessagesState = (messages: Message[]): MessagesState =>
  * (Only stream messages for now. Feel free to add PMs, if you need them.)
  */
 
-/** An outbox message with no interesting data. */
-const outboxMessageBase: $Diff<Outbox, {| id: mixed, timestamp: mixed |}> = deepFreeze({
+/**
+ * Boring properties common across example outbox messages.
+ */
+const outboxMessageBase = deepFreeze({
   isOutbox: true,
   isSent: false,
   avatar_url: selfUser.avatar_url,
   content: '<p>Test.</p>',
-  display_recipient: stream.name,
-  // id: ...,
   markdownContent: 'Test.',
   reactions: [],
   sender_email: selfUser.email,
   sender_full_name: selfUser.full_name,
   sender_id: selfUser.user_id,
-  subject: 'test topic',
-  // timestamp: ...,
-  type: 'stream',
 });
 
 /**
- * Create an outbox message from an interesting subset of its data.
+ * Create a stream outbox message from an interesting subset of its
+ *   data.
  *
  * `.id` is always identical to `.timestamp` and should not be supplied.
  */
-export const makeOutboxMessage = (data: $Shape<$Diff<Outbox, {| id: mixed |}>>): Outbox => {
+export const streamOutbox = (data: $Rest<StreamOutbox, { id: mixed, ... }>): StreamOutbox => {
   const { timestamp } = data;
 
   const outputTimestamp = timestamp ?? makeTime() / 1000;
   return deepFreeze({
     ...outboxMessageBase,
+    type: 'stream',
+    display_recipient: stream.name,
+    subject: 'test topic',
+
     ...data,
     id: outputTimestamp,
     timestamp: outputTimestamp,
@@ -484,6 +521,7 @@ export const reduxState = (extra?: $Rest<GlobalState, { ... }>): GlobalState =>
  * In particular:
  *  * The self-user is `selfUser`.
  *  * Users `otherUser` and `thirdUser` also exist.
+ *  * The stream `stream` exists, with subscription `subscription`.
  *
  * More generally, each object in the Zulip app model -- a user, a stream,
  * etc. -- that this module exports as a constant value (rather than only as
@@ -504,11 +542,20 @@ export const reduxState = (extra?: $Rest<GlobalState, { ... }>): GlobalState =>
  * See `baseReduxState` for a minimal version of the state.
  */
 export const plusReduxState: GlobalState = reduxState({
-  // TODO add .accounts, reflecting selfAuth, zulipVersion, zulipFeatureLevel
+  accounts: [
+    {
+      ...selfAuth,
+      userId: selfUser.user_id,
+      ackedPushToken: null,
+      zulipVersion,
+      zulipFeatureLevel,
+    },
+  ],
   realm: { ...baseReduxState.realm, user_id: selfUser.user_id, email: selfUser.email },
   // TODO add crossRealmBot
   users: [selfUser, otherUser, thirdUser],
-  // TODO add stream and subscription
+  streams: [stream],
+  subscriptions: [subscription],
 });
 
 /**
@@ -535,26 +582,27 @@ export const realmState = (extra?: $Rest<RealmState, { ... }>): RealmState =>
  * Complete actions which need no further data.
  */
 
-export const action = deepFreeze({
-  account_switch: {
+export const action = Object.freeze({
+  account_switch: (deepFreeze({
     type: ACCOUNT_SWITCH,
     index: 0,
-  },
-  login_success: {
+  }): AccountSwitchAction),
+  login_success: (deepFreeze({
     type: LOGIN_SUCCESS,
     realm: selfAccount.realm,
     email: selfAccount.email,
     apiKey: selfAccount.apiKey,
-  },
-  realm_init: {
+  }): LoginSuccessAction),
+  realm_init: (deepFreeze({
     type: REALM_INIT,
     data: {
       last_event_id: 34,
       msg: '',
-      queue_id: 1,
+      queue_id: '1',
       alert_words: [],
       max_message_id: 100,
       muted_topics: [],
+      muted_users: [],
       presences: {},
       max_icon_file_size: 3,
       realm_add_emoji_by_admins_only: true,
@@ -598,20 +646,21 @@ export const action = deepFreeze({
       realm_video_chat_provider: 1,
       realm_waiting_period_threshold: 3,
       zulip_feature_level: 1,
+      zulip_version: zulipVersion.raw(),
       realm_emoji: {},
       realm_filters: [],
       avatar_source: 'G',
-      avatar_url: null,
+      avatar_url: null, // ideally would agree with selfUser.avatar_url
       avatar_url_medium: 'url',
       can_create_streams: false,
       cross_realm_bots: [],
-      email: selfAccount.email,
+      email: selfAccount.email, // aka selfUser.email
       enter_sends: true,
-      full_name: 'Full name',
-      is_admin: false,
+      full_name: selfUser.full_name,
+      is_admin: selfUser.is_admin,
       realm_non_active_users: [],
       realm_users: [],
-      user_id: makeUserId(4),
+      user_id: selfUser.user_id,
       realm_user_groups: [],
       recent_private_conversations: [],
       streams: [],
@@ -624,7 +673,7 @@ export const action = deepFreeze({
       high_contrast_mode: true,
       left_side_userlist: true,
       night_mode: true,
-      timezone: '',
+      timezone: selfUser.timezone ?? 'UTC',
       translate_emoticons: true,
       twenty_four_hour_time: true,
       default_desktop_notifications: true,
@@ -650,15 +699,14 @@ export const action = deepFreeze({
       },
       user_status: {},
     },
-    zulipVersion,
-  },
-  message_fetch_start: {
+  }): RealmInitAction),
+  message_fetch_start: (deepFreeze({
     type: MESSAGE_FETCH_START,
     narrow: HOME_NARROW,
     numBefore: 0,
     numAfter: 20,
-  },
-  message_fetch_complete: {
+  }): MessageFetchStartAction),
+  message_fetch_complete: (deepFreeze({
     type: MESSAGE_FETCH_COMPLETE,
     messages: [],
     narrow: HOME_NARROW,
@@ -668,25 +716,73 @@ export const action = deepFreeze({
     foundNewest: undefined,
     foundOldest: undefined,
     ownUserId: selfUser.user_id,
-  },
+  }): MessageFetchCompleteAction),
+  // If a given action is only relevant to a single test file, no need to
+  // provide a generic example of it here; just define it there.
 });
 
-// Ensure every `eg.action.foo` is some well-typed action.  (We don't simply
-// annotate `action` itself, because we want to keep the information of
-// which one has which specific type.)
+// Ensure every `eg.action.foo` is some well-typed action.
 /* eslint-disable-next-line no-unused-expressions */
 (action: {| [string]: Action |});
 
 /* ========================================================================
- * Action fragments
+ * Action factories
  *
- * Partial actions, for those action types whose interior will almost always
- * need to be filled in with more data.
+ * Useful for action types where a static object of boilerplate data doesn't
+ * suffice.  Generally this is true where (a) there's some boilerplate data
+ * that's useful to supply here, but (b) there's some other places where a
+ * given test will almost always need to fill in specific data of its own.
+ *
+ * For action types without (b), a static example value `eg.action.foo` is
+ * enough.  For action types without (a), even that isn't necessary, because
+ * each test might as well define the action values it needs directly.
  */
 
-export const eventNewMessageActionBase /* \: $Diff<EventNewMessageAction, {| message: Message |}> */ = {
-  type: EVENT_NEW_MESSAGE,
-  id: 1001,
-  caughtUp: {},
-  ownUserId: selfUser.user_id,
-};
+/**
+ * An EVENT_NEW_MESSAGE action.
+ *
+ * The message argument can either have or omit a `flags` property; if
+ * omitted, it defaults to empty.  (The `message` property on an
+ * `EVENT_NEW_MESSAGE` action must have `flags`, while `Message` objects in
+ * some other contexts must not.  See comments on `Message` for details.)
+ */
+export const mkActionEventNewMessage = (
+  message: Message,
+  args?: {| caughtUp?: CaughtUpState, local_message_id?: number, ownUserId?: UserId |},
+): Action =>
+  deepFreeze({
+    type: EVENT_NEW_MESSAGE,
+    id: 1001,
+    caughtUp: {},
+    ownUserId: selfUser.user_id,
+
+    ...args,
+
+    message: { ...message, flags: message.flags ?? [] },
+  });
+
+// If a given action is only relevant to a single test file, no need to
+// provide a generic factory for it here; just define the test data there.
+
+/* ========================================================================
+ * Miscellaneous
+ */
+
+export const backgroundData: BackgroundData = deepFreeze({
+  alertWords: [],
+  allImageEmojiById: action.realm_init.data.realm_emoji,
+  auth: selfAuth,
+  debug: baseReduxState.session.debug,
+  doNotMarkMessagesAsRead: baseReduxState.settings.doNotMarkMessagesAsRead,
+  flags: baseReduxState.flags,
+  mute: [],
+  mutedUsers: Immutable.Map(),
+  ownUser: selfUser,
+  streams: getStreamsById(baseReduxState),
+  streamsByName: getStreamsByName(baseReduxState),
+  subscriptions: getSubscriptionsById(baseReduxState),
+  unread: baseReduxState.unread,
+  theme: 'default',
+  twentyFourHourTime: false,
+  userSettingStreamNotification: getSettings(baseReduxState).streamNotification,
+});

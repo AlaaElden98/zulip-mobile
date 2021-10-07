@@ -3,11 +3,11 @@ import type { Auth, ApiResponseSuccess } from '../transportTypes';
 import { apiPost } from '../apiFetch';
 
 type ApiResponseRealmCreateFilters = {|
-  ...ApiResponseSuccess,
+  ...$Exact<ApiResponseSuccess>,
   id: number,
 |};
 
-/** https://zulip.com/api/create-org-filters */
+/** https://zulip.com/api/add-linkifier */
 export default async (
   auth: Auth,
   pattern: string,

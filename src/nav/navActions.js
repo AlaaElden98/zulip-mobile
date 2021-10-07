@@ -1,15 +1,29 @@
 /* @flow strict-local */
 import {
+  type PopAction,
   StackActions,
   CommonActions,
   type GenericNavigationAction,
 } from '@react-navigation/native';
 
-import type { Message, Narrow, SharedData, UserId } from '../types';
+import * as NavigationService from './NavigationService';
+import type { Message, Narrow, UserId } from '../types';
+import type { SharedData } from '../sharing/types';
 import type { ApiResponseServerSettings } from '../api/settings/getServerSettings';
-import { getSameRoutesCount } from '../selectors';
 
-export const navigateBack = (): GenericNavigationAction => StackActions.pop(getSameRoutesCount());
+// TODO: Probably just do a StackActions.pop()?
+export const navigateBack = (): PopAction => {
+  const routes = NavigationService.getState().routes;
+  let i = routes.length - 1;
+  while (i >= 0) {
+    if (routes[i].name !== routes[routes.length - 1].name) {
+      break;
+    }
+    i--;
+  }
+  const sameRoutesCount = routes.length - i - 1;
+  return StackActions.pop(sameRoutesCount);
+};
 
 /*
  * "Reset" actions, to explicitly prohibit back navigation.
@@ -27,7 +41,10 @@ export const resetToMainTabs = (): GenericNavigationAction =>
 
 /** Only call this via `doNarrow`.  See there for details. */
 export const navigateToChat = (narrow: Narrow): GenericNavigationAction =>
-  StackActions.push('chat', { narrow });
+  StackActions.push('chat', { narrow, editMessage: null });
+
+export const replaceWithChat = (narrow: Narrow): GenericNavigationAction =>
+  StackActions.replace('chat', { narrow, editMessage: null });
 
 export const navigateToUsersScreen = (): GenericNavigationAction => StackActions.push('users');
 
@@ -40,10 +57,17 @@ export const navigateToAuth = (
   serverSettings: ApiResponseServerSettings,
 ): GenericNavigationAction => StackActions.push('auth', { serverSettings });
 
-export const navigateToDevAuth = (): GenericNavigationAction => StackActions.push('dev-auth');
+export const navigateToDevAuth = (args: {| realm: URL |}): GenericNavigationAction =>
+  StackActions.push('dev-auth', { realm: args.realm });
 
-export const navigateToPasswordAuth = (requireEmailFormat: boolean): GenericNavigationAction =>
-  StackActions.push('password-auth', { requireEmailFormat });
+export const navigateToPasswordAuth = (args: {|
+  realm: URL,
+  requireEmailFormat: boolean,
+|}): GenericNavigationAction =>
+  StackActions.push('password-auth', {
+    realm: args.realm,
+    requireEmailFormat: args.requireEmailFormat,
+  });
 
 export const navigateToAccountPicker = (): GenericNavigationAction =>
   StackActions.push('account-pick');
@@ -55,12 +79,8 @@ export const navigateToGroupDetails = (
   recipients: $ReadOnlyArray<UserId>,
 ): GenericNavigationAction => StackActions.push('group-details', { recipients });
 
-export const navigateToRealmInputScreen = (
-  // The `Object.freeze`` in the `:` case avoids a Flow issue:
-  // https://github.com/facebook/flow/issues/2386#issuecomment-695064325
-  args: {| realm?: URL, initial?: boolean |} = Object.freeze({}),
-): GenericNavigationAction =>
-  StackActions.push('realm-input', { realm: args.realm, initial: args.initial });
+export const navigateToRealmInputScreen = (): GenericNavigationAction =>
+  StackActions.push('realm-input', { initial: undefined });
 
 export const navigateToLightbox = (src: string, message: Message): GenericNavigationAction =>
   StackActions.push('lightbox', { src, message });

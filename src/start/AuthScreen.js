@@ -1,6 +1,7 @@
 /* @flow strict-local */
 
 import React, { PureComponent } from 'react';
+import type { ComponentType } from 'react';
 import { Linking, Platform } from 'react-native';
 import type { AppleAuthenticationCredential } from 'expo-apple-authentication';
 import * as AppleAuthentication from 'expo-apple-authentication';
@@ -13,7 +14,7 @@ import type {
 import type { RouteProp } from '../react-navigation';
 import type { AppNavigationProp } from '../nav/AppNavigator';
 import * as NavigationService from '../nav/NavigationService';
-import config from '../config';
+import isAppOwnDomain from '../isAppOwnDomain';
 import type { Dispatch } from '../types';
 import {
   IconApple,
@@ -27,20 +28,19 @@ import type { SpecificIconType } from '../common/Icons';
 import { connect } from '../react-redux';
 import styles from '../styles';
 import { Centerer, Screen, ZulipButton } from '../common';
-import { getCurrentRealm } from '../selectors';
 import RealmInfo from './RealmInfo';
 import { encodeParamsForUrl } from '../utils/url';
 import * as webAuth from './webAuth';
 import { loginSuccess, navigateToDevAuth, navigateToPasswordAuth } from '../actions';
 import IosCompliantAppleAuthButton from './IosCompliantAppleAuthButton';
-import openLink from '../utils/openLink';
+import { openLinkEmbedded } from '../utils/openLink';
 
 /**
  * Describes a method for authenticating to the server.
  *
  * Different servers and orgs/realms accept different sets of auth methods,
  * described in the /server_settings response; see api.getServerSettings
- * and https://zulip.com/api/server-settings .
+ * and https://zulip.com/api/get-server-settings .
  */
 type AuthenticationMethodDetails = {|
   /** An identifier-style name used in the /server_settings API. */
@@ -168,12 +168,25 @@ export const activeAuthentications = (
   return result;
 };
 
-type Props = $ReadOnly<{|
+type OuterProps = $ReadOnly<{|
+  // These should be passed from React Navigation
   navigation: AppNavigationProp<'auth'>,
   route: RouteProp<'auth', {| serverSettings: ApiResponseServerSettings |}>,
+|}>;
+
+type SelectorProps = $ReadOnly<{|
+  // Don't let this change across the component's lifecycle. It must be
+  // clear and predictable which realm the user is entrusting their
+  // credentials to. (And other sensitive info, e.g., from the Apple auth
+  // native flow.)
+  realm: URL,
+|}>;
+
+type Props = $ReadOnly<{|
+  ...OuterProps,
 
   dispatch: Dispatch,
-  realm: URL,
+  ...SelectorProps,
 |}>;
 
 let otp = '';
@@ -191,7 +204,7 @@ type LinkingEvent = {
   ...
 };
 
-class AuthScreen extends PureComponent<Props> {
+class AuthScreenInner extends PureComponent<Props> {
   componentDidMount = () => {
     Linking.addEventListener('url', this.endWebAuth);
     Linking.getInitialURL().then((initialUrl: ?string) => {
@@ -236,13 +249,17 @@ class AuthScreen extends PureComponent<Props> {
   };
 
   handleDevAuth = () => {
-    NavigationService.dispatch(navigateToDevAuth());
+    NavigationService.dispatch(navigateToDevAuth({ realm: this.props.realm }));
   };
 
   handlePassword = () => {
     const { serverSettings } = this.props.route.params;
+    const { realm } = this.props;
     NavigationService.dispatch(
-      navigateToPasswordAuth(serverSettings.require_email_format_usernames),
+      navigateToPasswordAuth({
+        realm,
+        requireEmailFormat: serverSettings.require_email_format_usernames,
+      }),
     );
   };
 
@@ -267,7 +284,7 @@ class AuthScreen extends PureComponent<Props> {
       id_token: credential.identityToken,
     });
 
-    openLink(new URL(`/complete/apple/?${params}`, this.props.realm).toString());
+    openLinkEmbedded(new URL(`/complete/apple/?${params}`, this.props.realm).toString());
 
     // Currently, the rest is handled with the `zulip://` redirect,
     // same as in the web flow.
@@ -282,8 +299,6 @@ class AuthScreen extends PureComponent<Props> {
       return false;
     }
 
-    const { host } = this.props.realm;
-
     // The native flow for Apple auth assumes that the app and the server
     // are operated by the same organization, so that for a user to
     // entrust private information to either one is the same as entrusting
@@ -291,7 +306,7 @@ class AuthScreen extends PureComponent<Props> {
     //
     // (For other realms, we'll simply fall back to the web flow, which
     // handles things appropriately without relying on that assumption.)
-    return config.appOwnDomains.some(domain => host === domain || host.endsWith(`.${domain}`));
+    return isAppOwnDomain(this.props.realm);
   };
 
   handleAuth = async (method: AuthenticationMethodDetails) => {
@@ -348,6 +363,10 @@ class AuthScreen extends PureComponent<Props> {
   }
 }
 
-export default connect(state => ({
-  realm: getCurrentRealm(state),
-}))(AuthScreen);
+const AuthScreen: ComponentType<OuterProps> = connect((state, props) => ({
+  // Not from the Redux state, but it's convenient to validate the URL
+  // in one central place, like here.
+  realm: new URL(props.route.params.serverSettings.realm_uri),
+}))(AuthScreenInner);
+
+export default AuthScreen;

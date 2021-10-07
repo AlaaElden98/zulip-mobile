@@ -27,7 +27,7 @@ import type {
   UserPresence,
   UserStatusMapObject,
 } from './api/apiTypes';
-import type { SessionState } from './session/sessionReducer';
+import type { PerAccountSessionState, SessionState } from './session/sessionReducer';
 import type { PmConversationsState } from './pm-conversations/pmConversationsModel';
 import type { UnreadState } from './unread/unreadModelTypes';
 
@@ -47,9 +47,9 @@ export type * from './actionTypes';
  *    the app.
  *  * `Account` for details on the properties of each account object.
  */
-export type AccountsState = Account[];
+export type AccountsState = $ReadOnlyArray<Account>;
 
-export type AlertWordsState = string[];
+export type AlertWordsState = $ReadOnlyArray<string>;
 
 /**
  * Info about how complete our knowledge is of the messages in some narrow.
@@ -60,10 +60,10 @@ export type AlertWordsState = string[];
  *   the narrow.  Of course their may always be new messages, but we should
  *   learn about them through events; so again, no need to fetch more.
  */
-export type CaughtUp = {|
+export type CaughtUp = $ReadOnly<{|
   older: boolean,
   newer: boolean,
-|};
+|}>;
 
 /**
  * Info about how completely we know the messages in each narrow.
@@ -72,23 +72,23 @@ export type CaughtUp = {|
  *
  * See `CaughtUp` for details on what each value means.
  */
-export type CaughtUpState = {|
+export type CaughtUpState = $ReadOnly<{|
   [narrow: string]: CaughtUp,
-|};
+|}>;
 
 /**
  * The user's draft message, if any, in each conversation.
  *
  * The keys correspond to the keys in `NarrowsState`.
  */
-export type DraftsState = {|
+export type DraftsState = $ReadOnly<{|
   [narrow: string]: string,
-|};
+|}>;
 
-export type Fetching = {|
+export type Fetching = $ReadOnly<{|
   older: boolean,
   newer: boolean,
-|};
+|}>;
 
 /**
  * Info about which narrows we're actively fetching more messages from.
@@ -97,30 +97,40 @@ export type Fetching = {|
  *
  * See also: `CaughtUpState`, `NarrowsState`.
  */
-export type FetchingState = {|
+export type FetchingState = $ReadOnly<{|
   [narrow: string]: Fetching,
-|};
+|}>;
 
 /**
  * The message flags corresponding to all the messages in `MessagesState`.
  *
  * Unlike almost all other subtrees of our state, this one can be
  * incomplete, always in exactly the same way that `MessagesState` is.
+ *
+ * We expect most of these flags to be very sparse: the number of messages
+ * you have starred, or where you're @-mentioned, is typically a very small
+ * fraction of the total number of messages you have. That's why it probably
+ * doesn't make sense for this data structure to explicitly indicate "not
+ * starred", "not @-mentioned", etc., for every known message. That could
+ * significantly increase the memory and storage requirement when we know
+ * about a lot of messages. If we need to distinguish "unknown message" from
+ * "message without flag", we can look up the message ID in
+ * `state.messages`.
  */
-export type FlagsState = {|
-  read: {| [messageId: number]: boolean |},
-  starred: {| [messageId: number]: boolean |},
-  collapsed: {| [messageId: number]: boolean |},
-  mentioned: {| [messageId: number]: boolean |},
-  wildcard_mentioned: {| [messageId: number]: boolean |},
-  summarize_in_home: {| [messageId: number]: boolean |},
-  summarize_in_stream: {| [messageId: number]: boolean |},
-  force_expand: {| [messageId: number]: boolean |},
-  force_collapse: {| [messageId: number]: boolean |},
-  has_alert_word: {| [messageId: number]: boolean |},
-  historical: {| [messageId: number]: boolean |},
-  is_me_message: {| [messageId: number]: boolean |},
-|};
+export type FlagsState = $ReadOnly<{|
+  read: {| +[messageId: number]: true |},
+  starred: {| +[messageId: number]: true |},
+  collapsed: {| +[messageId: number]: true |},
+  mentioned: {| +[messageId: number]: true |},
+  wildcard_mentioned: {| +[messageId: number]: true |},
+  summarize_in_home: {| +[messageId: number]: true |},
+  summarize_in_stream: {| +[messageId: number]: true |},
+  force_expand: {| +[messageId: number]: true |},
+  force_collapse: {| +[messageId: number]: true |},
+  has_alert_word: {| +[messageId: number]: true |},
+  historical: {| +[messageId: number]: true |},
+  is_me_message: {| +[messageId: number]: true |},
+|}>;
 
 export type FlagName = $Keys<FlagsState>;
 
@@ -131,7 +141,7 @@ export type FlagName = $Keys<FlagsState>;
  * event system to get a complete snapshot and to maintain it incrementally.
  * See `doInitialFetch` for discussion, and see our docs from the
  * client-side perspective:
- *   https://github.com/zulip/zulip-mobile/blob/master/docs/architecture/realtime.md
+ *   https://github.com/zulip/zulip-mobile/blob/main/docs/architecture/realtime.md
  * and a mainly server-side perspective:
  *   https://zulip.readthedocs.io/en/latest/subsystems/events-system.html
  * As a result, there are very few types of data we need to go fetch from
@@ -160,11 +170,14 @@ export type FlagName = $Keys<FlagsState>;
  */
 export type MessagesState = Immutable.Map<number, Message>;
 
-export type MigrationsState = {|
+export type MigrationsState = $ReadOnly<{|
   version?: string,
-|};
+|}>;
 
-export type MuteState = MuteTuple[];
+export type MuteState = $ReadOnlyArray<MuteTuple>;
+
+/** A map from user IDs to the Unix timestamp in seconds when they were muted. */
+export type MutedUsersState = Immutable.Map<UserId, number>;
 
 /**
  * An index on `MessagesState`, listing messages in each narrow.
@@ -186,7 +199,7 @@ export type MuteState = MuteTuple[];
  */
 export type NarrowsState = Immutable.Map<string, number[]>;
 
-export type OutboxState = Outbox[];
+export type OutboxState = $ReadOnlyArray<Outbox>;
 
 /**
  * The `presence` subtree of our Redux state.
@@ -194,9 +207,9 @@ export type OutboxState = Outbox[];
  * @prop (email) - Indexes over all users for which the app has received a
  *   presence status.
  */
-export type PresenceState = {|
+export type PresenceState = $ReadOnly<{|
   [email: string]: UserPresence,
-|};
+|}>;
 
 /**
  * Configuration for a video chat provider, as specified by the server.
@@ -210,7 +223,7 @@ export type PresenceState = {|
  */
 // Right now there's just one branch here; if we add another provider, this
 // should become a disjoint union on `name`.
-export type VideoChatProvider = {| name: 'jitsi_meet', jitsiServerUrl: string |};
+export type VideoChatProvider = $ReadOnly<{| name: 'jitsi_meet', jitsiServerUrl: string |}>;
 
 /**
  * State with miscellaneous data from the server; our state subtree `realm`.
@@ -240,11 +253,11 @@ export type VideoChatProvider = {| name: 'jitsi_meet', jitsiServerUrl: string |}
  * @prop canCreateStreams
  * @prop isAdmin
  */
-export type RealmState = {|
-  crossRealmBots: CrossRealmBot[],
+export type RealmState = $ReadOnly<{|
+  crossRealmBots: $ReadOnlyArray<CrossRealmBot>,
 
-  nonActiveUsers: User[],
-  filters: RealmFilter[],
+  nonActiveUsers: $ReadOnlyArray<User>,
+  filters: $ReadOnlyArray<RealmFilter>,
   emoji: RealmEmojiById,
   videoChatProvider: VideoChatProvider | null,
 
@@ -253,38 +266,98 @@ export type RealmState = {|
   twentyFourHourTime: boolean,
   canCreateStreams: boolean,
   isAdmin: boolean,
-|};
+|}>;
 
 // TODO: Stop using the 'default' name. Any 'default' semantics should
 // only apply the device level, not within the app. See
 // https://github.com/zulip/zulip-mobile/issues/4009#issuecomment-619280681.
 export type ThemeName = 'default' | 'night';
 
-export type SettingsState = {|
-  locale: string,
-  theme: ThemeName,
+/** What browser the user has set to use for opening links in messages.
+ *
+ * * embedded: The in-app browser
+ * * external: The user's default browser app
+ * * default: 'external' on iOS, 'embedded' on Android
+ *
+ * Use the `shouldUseInAppBrowser` function from src/utils/openLink.js in order to
+ * parse this.
+ *
+ * See https://chat.zulip.org/#narrow/stream/48-mobile/topic/in-app.20browser
+ * for the reasoning behind these options.
+ */
+export type BrowserPreference = 'embedded' | 'external' | 'default';
+
+/**
+ * The user's chosen settings specific to this account.
+ */
+export type PerAccountSettingsState = $ReadOnly<{
   offlineNotification: boolean,
   onlineNotification: boolean,
-  experimentalFeaturesEnabled: boolean,
   streamNotification: boolean,
-|};
+  ...
+}>;
 
-export type StreamsState = Stream[];
+/**
+ * The user's chosen settings independent of account, on this client.
+ *
+ * These apply across all the user's accounts on this client (i.e. on this
+ * install of the app on this device).
+ *
+ * See also {@link PerAccountSettingsState}.
+ */
+// Because these apply independent of account, they necessarily can't come
+// from the server.
+export type GlobalSettingsState = $ReadOnly<{
+  // The user's chosen language, as an IETF BCP 47 language tag.
+  language: string,
 
-export type SubscriptionsState = Subscription[];
+  theme: ThemeName,
+  browser: BrowserPreference,
 
-export type TopicsState = {|
-  [number]: Topic[],
-|};
+  // TODO cut this? what was it?
+  experimentalFeaturesEnabled: boolean,
 
-export type TypingState = {|
-  [normalizedRecipients: string]: {|
+  // Possibly this should be per-account.  If so it should probably be put
+  // on the server, so it can also be cross-device for the account.
+  doNotMarkMessagesAsRead: boolean,
+
+  ...
+}>;
+
+/**
+ * The user's chosen settings.
+ *
+ * This is a mix of server data representing the active account (see
+ * {@link PerAccountSettingsState}), and client-only data that applies
+ * across all the user's accounts on this client (see
+ * {@link GlobalSettingsState}).
+ */
+export type SettingsState = $ReadOnly<{|
+  ...$Exact<GlobalSettingsState>,
+  ...$Exact<PerAccountSettingsState>,
+|}>;
+
+// As part of letting GlobalState freely convert to PerAccountState,
+// we'll want the same for SettingsState.  (This is also why
+// PerAccountSettingsState is inexact.)
+(s: SettingsState): PerAccountSettingsState => s; // eslint-disable-line no-unused-expressions
+
+export type StreamsState = $ReadOnlyArray<Stream>;
+
+export type SubscriptionsState = $ReadOnlyArray<Subscription>;
+
+export type TopicsState = $ReadOnly<{|
+  [number]: $ReadOnlyArray<Topic>,
+|}>;
+
+export type TypingState = $ReadOnly<{|
+  [normalizedRecipients: string]: $ReadOnly<{|
     time: number,
-    userIds: UserId[],
-  |},
-|};
+    userIds: $ReadOnlyArray<UserId>,
+  |}>,
+|}>;
 
-export type UserGroupsState = UserGroup[];
+export type UserGroupsState = $ReadOnlyArray<UserGroup>;
 
 export type UserStatusState = UserStatusMapObject;
 
@@ -294,7 +367,65 @@ export type UserStatusState = UserStatusMapObject;
  * This contains all users except deactivated users and cross-realm bots.
  * For those, see RealmState.
  */
-export type UsersState = User[];
+export type UsersState = $ReadOnlyArray<User>;
+
+/* eslint-disable no-use-before-define */
+
+/**
+ * The portion of our Redux state with a single account's data.
+ *
+ * In a multi-account world (#5005), the full Redux state will contain one
+ * of these per account.  Before that, in a multi-account-ready schema
+ * (#5006), the full Redux state may contain just one of these but as a
+ * subtree somewhere inside it.
+ *
+ * Initially, though, the full Redux state tree actually qualifies as a
+ * value of this type, and the values of this type we pass around are
+ * secretly just the full Redux state.  The purpose of this type is to
+ * expose only the data that in a multi-account future will live on a single
+ * account's state subtree, and to recruit Flow's help in tracking which
+ * parts of our code will in that future operate on a particular account and
+ * which parts will operate on all accounts' data or none.
+ */
+export type PerAccountState = $ReadOnly<{
+  // TODO(#5006): Secretly we assume these objects also have `Account` data,
+  //   like so:
+  // accounts: [Account, ...mixed],
+  //   which they do because they're always actually `GlobalState` objects.
+  //   Need to put that data somewhere that's less mixed up with other accounts'
+  //   data.  See `accountsSelectors` for where we make that assumption.
+
+  // Jumbles of per-account state and client state.
+  session: PerAccountSessionState,
+  settings: PerAccountSettingsState,
+
+  // Per-account state that's *not* from the server.
+  drafts: DraftsState,
+  outbox: OutboxState,
+
+  // Per-account state: server data for the active account.
+  alertWords: AlertWordsState,
+  caughtUp: CaughtUpState,
+  fetching: FetchingState,
+  flags: FlagsState,
+  messages: MessagesState,
+  mute: MuteState,
+  mutedUsers: MutedUsersState,
+  narrows: NarrowsState,
+  pmConversations: PmConversationsState,
+  presence: PresenceState,
+  realm: RealmState,
+  streams: StreamsState,
+  subscriptions: SubscriptionsState,
+  topics: TopicsState,
+  typing: TypingState,
+  unread: UnreadState,
+  userGroups: UserGroupsState,
+  userStatus: UserStatusState,
+  users: UsersState,
+
+  ...
+}>;
 
 /**
  * Our complete Redux state tree.
@@ -310,44 +441,62 @@ export type UsersState = User[];
  * See in particular `discardKeys`, `storeKeys`, and `cacheKeys`, which
  * identify which subtrees are persisted and which are not.
  */
-export type GlobalState = {|
-  accounts: AccountsState,
-  alertWords: AlertWordsState,
-  caughtUp: CaughtUpState,
-  drafts: DraftsState,
-  fetching: FetchingState,
-  flags: FlagsState,
-  messages: MessagesState,
+export type GlobalState = $ReadOnly<{|
+  ...$Exact<PerAccountState>,
+
+  // Metadata for the global state, as persisted on disk.
   migrations: MigrationsState,
-  mute: MuteState,
-  narrows: NarrowsState,
-  outbox: OutboxState,
-  pmConversations: PmConversationsState,
-  presence: PresenceState,
-  realm: RealmState,
+
+  // Jumbles of per-account state and client state.
   session: SessionState,
   settings: SettingsState,
-  streams: StreamsState,
-  subscriptions: SubscriptionsState,
-  topics: TopicsState,
-  typing: TypingState,
-  unread: UnreadState,
-  userGroups: UserGroupsState,
-  userStatus: UserStatusState,
-  users: UsersState,
-|};
 
-/** A selector returning TResult, with extra parameter TParam. */
+  // Per-account state but for all accounts together.
+  // Mix of server data and otherwise.
+  accounts: AccountsState,
+|}>;
+
+// For now, under our single-active-account model, we want a GlobalState
+// to be seamlessly usable as a PerAccountState.
+(s: GlobalState): PerAccountState => s; // eslint-disable-line no-unused-expressions
+
+/**
+ * Assume the given per-account state object is secretly a GlobalState.
+ *
+ * At present, this assumption is always true.  But in the future it won't
+ * be.  Calling this function has much the same effect as a fixme, but just
+ * makes it quite explicit that this particular assumption is being used.
+ *
+ * TODO(#5006): We'll have to fix and eliminate each call to this.
+ */
+export function assumeSecretlyGlobalState(state: PerAccountState): GlobalState {
+  // $FlowFixMe[incompatible-exact]
+  // $FlowFixMe[prop-missing]
+  return state;
+}
+
+// No substate should allow `undefined`; our use of AsyncStorage
+// depends on it. (This check will also complain on `null`, which I
+// don't think we'd have a problem with. We could try to write this
+// differently if we want to allow `null`.)
+type NonMaybeProperties<O: { ... }> = $ObjMap<O, <V>(V) => $NonMaybeType<V>>;
+type NonMaybeGlobalState = NonMaybeProperties<GlobalState>;
+// This function definition will fail typechecking if GlobalState is wrong.
+(s: GlobalState): NonMaybeGlobalState => s; // eslint-disable-line no-unused-expressions
+
+/** A per-account selector returning TResult, with extra parameter TParam. */
 // Seems like this should be OutputSelector... but for whatever reason,
 // putting that on a selector doesn't cause the result type to propagate to
 // the corresponding parameter when used in `createSelector`, and this does.
-export type Selector<TResult, TParam = void> = InputSelector<GlobalState, TParam, TResult>;
+export type Selector<TResult, TParam = void> = InputSelector<PerAccountState, TParam, TResult>;
 
-export type GetState = () => GlobalState;
-
-export type PlainDispatch = <A: Action>(action: A) => A;
+/** A GlobalState selector returning TResult, with extra parameter TParam. */
+// Seems like this should be OutputSelector; see comment on Selector above.
+export type GlobalSelector<TResult, TParam = void> = InputSelector<GlobalState, TParam, TResult>;
 
 export interface Dispatch {
   <A: Action>(action: A): A;
-  <T>((Dispatch, GetState) => T): T;
+  <T>(ThunkAction<T>): T;
 }
+
+export type ThunkAction<T> = (Dispatch, () => GlobalState) => T;

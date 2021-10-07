@@ -1,9 +1,9 @@
 /* @flow strict-local */
-import type { GetState, Dispatch, Narrow, Topic, Action, Outbox, Stream } from '../types';
+import type { Narrow, Topic, Action, ThunkAction, Outbox } from '../types';
 import * as api from '../api';
 import { INIT_TOPICS } from '../actionConstants';
 import { isStreamNarrow, streamNameOfNarrow } from '../utils/narrow';
-import { getAuth, getStreams } from '../selectors';
+import { getAuth, getStreams, getStreamsById } from '../selectors';
 import { deleteOutboxMessage } from '../actions';
 import { getOutbox } from '../directSelectors';
 import { streamNameOfStreamMessage } from '../utils/recipient';
@@ -14,15 +14,18 @@ export const initTopics = (topics: Topic[], streamId: number): Action => ({
   streamId,
 });
 
-export const fetchTopics = (streamId: number) => async (dispatch: Dispatch, getState: GetState) => {
+export const fetchTopics = (streamId: number): ThunkAction<Promise<void>> => async (
+  dispatch,
+  getState,
+) => {
   const auth = getAuth(getState());
   const { topics } = await api.getTopics(auth, streamId);
   dispatch(initTopics(topics, streamId));
 };
 
-export const fetchTopicsForStream = (narrow: Narrow) => async (
-  dispatch: Dispatch,
-  getState: GetState,
+export const fetchTopicsForStream = (narrow: Narrow): ThunkAction<Promise<void>> => async (
+  dispatch,
+  getState,
 ) => {
   const state = getState();
 
@@ -40,25 +43,24 @@ export const fetchTopicsForStream = (narrow: Narrow) => async (
   dispatch(fetchTopics(stream.stream_id));
 };
 
-export const deleteMessagesForTopic = (streamName: string, topic: string) => async (
-  dispatch: Dispatch,
-  getState: GetState,
-) => {
+export const deleteMessagesForTopic = (
+  streamId: number,
+  topic: string,
+): ThunkAction<Promise<void>> => async (dispatch, getState) => {
   const state = getState();
   const outbox = getOutbox(state);
+  const stream = getStreamsById(state).get(streamId);
+
   outbox.forEach((outboxMessage: Outbox) => {
     if (
       outboxMessage.type === 'stream'
-      && streamNameOfStreamMessage(outboxMessage) === streamName
+      // TODO: Use StreamId here (see #M3918) when `Outbox` starts
+      // having that property (see #M3998).
+      && streamNameOfStreamMessage(outboxMessage) === stream?.name
       && outboxMessage.subject === topic
     ) {
       dispatch(deleteOutboxMessage(outboxMessage.id));
     }
   });
-  const currentStream: Stream | void = getStreams(state).find(
-    (stream: Stream) => stream.name === streamName,
-  );
-  if (currentStream) {
-    await api.deleteTopic(getAuth(state), currentStream.stream_id, topic);
-  }
+  await api.deleteTopic(getAuth(state), streamId, topic);
 };

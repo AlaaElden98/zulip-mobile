@@ -23,7 +23,7 @@ export type ExternalAuthenticationMethod = {|
 |};
 
 export type ApiResponseServerSettings = {|
-  ...ApiResponseSuccess,
+  ...$Exact<ApiResponseSuccess>,
   authentication_methods: AuthenticationMethods,
   // external_authentication_methods added for server v2.1
   external_authentication_methods?: ExternalAuthenticationMethod[],
@@ -37,10 +37,10 @@ export type ApiResponseServerSettings = {|
   zulip_version: string,
 
   // zulip_feature_level added for server v2.2, feature level 1
-  // See https://zulipchat.com/api/server-settings
+  // See https://zulip.com/api/get-server-settings
   zulip_feature_level?: number,
 |};
 
-/** See https://zulip.com/api/server-settings */
+/** See https://zulip.com/api/get-server-settings */
 export default async (realm: URL): Promise<ApiResponseServerSettings> =>
   apiGet({ apiKey: '', email: '', realm }, 'server_settings');

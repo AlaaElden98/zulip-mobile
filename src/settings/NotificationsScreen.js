@@ -1,86 +1,73 @@
 /* @flow strict-local */
 
-import React, { PureComponent } from 'react';
+import React, { useCallback } from 'react';
+import type { Node } from 'react';
 
 import type { RouteProp } from '../react-navigation';
 import type { AppNavigationProp } from '../nav/AppNavigator';
-import type { Auth, Dispatch } from '../types';
-import { connect } from '../react-redux';
+import { useSelector, useDispatch } from '../react-redux';
 import { getAuth, getSettings } from '../selectors';
-import { OptionRow, Screen } from '../common';
+import { SwitchRow, Screen } from '../common';
 import * as api from '../api';
 import { settingsChange } from '../actions';
 
 type Props = $ReadOnly<{|
   navigation: AppNavigationProp<'notifications'>,
   route: RouteProp<'notifications', void>,
-
-  auth: Auth,
-  dispatch: Dispatch,
-  offlineNotification: boolean,
-  onlineNotification: boolean,
-  streamNotification: boolean,
 |}>;
 
-class NotificationsScreen extends PureComponent<Props> {
-  handleOfflineNotificationChange = () => {
-    const { auth, dispatch, offlineNotification } = this.props;
+/** (NB this is a per-account screen -- these are per-account settings.) */
+export default function NotificationsScreen(props: Props): Node {
+  const auth = useSelector(getAuth);
+  const offlineNotification = useSelector(state => getSettings(state).offlineNotification);
+  const onlineNotification = useSelector(state => getSettings(state).onlineNotification);
+  const streamNotification = useSelector(state => getSettings(state).streamNotification);
+  const dispatch = useDispatch();
+
+  const handleOfflineNotificationChange = useCallback(() => {
     api.toggleMobilePushSettings({
       auth,
       opp: 'offline_notification_change',
       value: !offlineNotification,
     });
     dispatch(settingsChange({ offlineNotification: !offlineNotification }));
-  };
+  }, [offlineNotification, auth, dispatch]);
 
-  handleOnlineNotificationChange = () => {
-    const { auth, dispatch, onlineNotification } = this.props;
+  const handleOnlineNotificationChange = useCallback(() => {
     api.toggleMobilePushSettings({
       auth,
       opp: 'online_notification_change',
       value: !onlineNotification,
     });
     dispatch(settingsChange({ onlineNotification: !onlineNotification }));
-  };
+  }, [onlineNotification, auth, dispatch]);
 
-  handleStreamNotificationChange = () => {
-    const { auth, dispatch, streamNotification } = this.props;
+  const handleStreamNotificationChange = useCallback(() => {
     api.toggleMobilePushSettings({
       auth,
       opp: 'stream_notification_change',
       value: !streamNotification,
     });
     dispatch(settingsChange({ streamNotification: !streamNotification }));
-  };
+  }, [streamNotification, auth, dispatch]);
 
-  render() {
-    const { offlineNotification, onlineNotification, streamNotification } = this.props;
-
-    return (
-      <Screen title="Notifications">
-        <OptionRow
-          label="Notifications when offline"
-          value={offlineNotification}
-          onValueChange={this.handleOfflineNotificationChange}
-        />
-        <OptionRow
-          label="Notifications when online"
-          value={onlineNotification}
-          onValueChange={this.handleOnlineNotificationChange}
-        />
-        <OptionRow
-          label="Stream notifications"
-          value={streamNotification}
-          onValueChange={this.handleStreamNotificationChange}
-        />
-      </Screen>
-    );
-  }
+  return (
+    <Screen title="Notifications">
+      <SwitchRow
+        label="Notifications when offline"
+        value={offlineNotification}
+        onValueChange={handleOfflineNotificationChange}
+      />
+      <SwitchRow
+        label="Notifications when online"
+        value={onlineNotification}
+        onValueChange={handleOnlineNotificationChange}
+      />
+      <SwitchRow
+        label="Stream notifications"
+        value={streamNotification}
+        onValueChange={handleStreamNotificationChange}
+      />
+    </Screen>
+  );
 }
-
-export default connect(state => ({
-  auth: getAuth(state),
-  offlineNotification: getSettings(state).offlineNotification,
-  onlineNotification: getSettings(state).onlineNotification,
-  streamNotification: getSettings(state).streamNotification,
-}))(NotificationsScreen);

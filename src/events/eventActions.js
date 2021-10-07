@@ -1,42 +1,38 @@
 /* @flow strict-local */
-import { batchActions } from 'redux-batched-actions';
-
-import type { EventAction } from '../actionTypes';
-import type { Action, Dispatch, GeneralEvent, GetState, GlobalState } from '../types';
+import type { GeneralEvent, ThunkAction } from '../types';
 import * as api from '../api';
 import { logout } from '../account/accountActions';
 import { deadQueue } from '../session/sessionActions';
 import eventToAction from './eventToAction';
 import doEventActionSideEffects from './doEventActionSideEffects';
-import { tryGetAuth } from '../selectors';
+import { tryGetActiveAccountState, tryGetAuth } from '../selectors';
 import { BackoffMachine } from '../utils/async';
 import { ApiError } from '../api/apiErrors';
+import * as logging from '../utils/logging';
 
-/** Convert an `/events` response into a sequence of our Redux actions. */
-export const eventsToActions = (
-  state: GlobalState,
-  events: $ReadOnlyArray<GeneralEvent>,
-): EventAction[] =>
-  events
-    .map(event => eventToAction(state, event))
-    .filter(action => {
-      if (action.type === 'ignore') {
-        return false;
-      }
+/**
+ * Handle a single Zulip event from the server.
+ *
+ * This is part of our use of the Zulip events system; see `doInitialFetch`
+ * for discussion.
+ */
+const handleEvent = (event: GeneralEvent, dispatch, getState) => {
+  try {
+    const action = eventToAction(getState(), event);
+    if (!action) {
+      return;
+    }
 
-      if (action.type === 'unknown') {
-        console.log('Cannot handle event', action.event); // eslint-disable-line
-        return false;
-      }
+    // These side effects should not be moved to reducers, which
+    // are explicitly not the place for side effects (see
+    // https://redux.js.org/faq/actions).
+    dispatch(doEventActionSideEffects(action));
 
-      return true;
-    });
-
-export const dispatchOrBatch = (dispatch: Dispatch, actions: $ReadOnlyArray<Action>) => {
-  if (actions.length > 1) {
-    dispatch(batchActions(actions));
-  } else if (actions.length === 1) {
-    dispatch(actions[0]);
+    // Now dispatch the plain-object action, for our reducers to handle.
+    dispatch(action);
+  } catch (e) {
+    // We had an error processing the event.  Log it and carry on.
+    logging.error(e);
   }
 };
 
@@ -46,43 +42,40 @@ export const dispatchOrBatch = (dispatch: Dispatch, actions: $ReadOnlyArray<Acti
  * This is part of our use of the Zulip events system; see `doInitialFetch`
  * for discussion.
  */
-export const startEventPolling = (queueId: number, eventId: number) => async (
-  dispatch: Dispatch,
-  getState: GetState,
-) => {
+export const startEventPolling = (
+  queueId: string,
+  eventId: number,
+): ThunkAction<Promise<void>> => async (dispatch, getState) => {
   let lastEventId = eventId;
 
   const backoffMachine = new BackoffMachine();
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    const auth = tryGetAuth(getState());
+    const state = tryGetActiveAccountState(getState());
+    const auth = state && tryGetAuth(state);
     if (!auth) {
-      // User switched accounts or logged out
+      // There is no logged-in active account.
       break;
     }
+    // `auth` represents the active account.  It might be different from
+    // the one in the previous loop iteration, if we did a backoff wait.
+    // TODO(#5009): Is that really quite OK?
 
+    let events = undefined;
     try {
-      const { events } = await api.pollForEvents(auth, queueId, lastEventId);
+      const response = await api.pollForEvents(auth, queueId, lastEventId);
+      events = response.events;
 
-      // User switched accounts or logged out
       if (queueId !== getState().session.eventQueueId) {
+        // The user switched accounts or logged out.
+        // TODO(#5022): TODO(#5009): This doesn't seem like an adequate
+        //   check for that; it looks like it only detects a new REALM_INIT.
         break;
       }
-
-      const actions = eventsToActions(getState(), events);
-
-      actions.forEach(action => {
-        // These side effects should not be moved to reducers, which
-        // are explicitly not the place for side effects (see
-        // https://redux.js.org/faq/actions).
-        dispatch(doEventActionSideEffects(action));
-      });
-
-      dispatchOrBatch(dispatch, actions);
-
-      lastEventId = Math.max.apply(null, [lastEventId, ...events.map(x => x.id)]);
     } catch (e) {
+      // We had an error polling the server for events.
+
       if (e.httpStatus === 401) {
         // 401 Unauthorized -> our `auth` is invalid.  No use retrying.
         dispatch(logout());
@@ -97,6 +90,14 @@ export const startEventPolling = (queueId: number, eventId: number) => async (
         dispatch(deadQueue());
         break;
       }
+
+      continue;
     }
+
+    for (const event of events) {
+      handleEvent(event, dispatch, getState);
+    }
+
+    lastEventId = Math.max(lastEventId, ...events.map(x => x.id));
   }
 };

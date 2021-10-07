@@ -1,16 +1,20 @@
 /* @flow strict-local */
+// $FlowFixMe[untyped-import]
 import parseMarkdown from 'zulip-markdown-parser';
+import invariant from 'invariant';
 
 import * as logging from '../utils/logging';
 import type {
-  Dispatch,
-  GetState,
   GlobalState,
   Narrow,
   Outbox,
+  PmOutbox,
+  StreamOutbox,
+  Stream,
   UserOrBot,
   UserId,
   Action,
+  ThunkAction,
 } from '../types';
 import type { SubsetProperties } from '../generics';
 import {
@@ -19,11 +23,11 @@ import {
   DELETE_OUTBOX_MESSAGE,
   MESSAGE_SEND_COMPLETE,
 } from '../actionConstants';
-import { getAuth } from '../selectors';
+import { getAuth, getStreamsByName } from '../selectors';
 import * as api from '../api';
 import { getAllUsersById, getOwnUser } from '../users/userSelectors';
 import { getUsersAndWildcards } from '../users/userHelpers';
-import { caseNarrowPartial } from '../utils/narrow';
+import { caseNarrowPartial, isConversationNarrow } from '../utils/narrow';
 import { BackoffMachine } from '../utils/async';
 import { recipientsOfPrivateMessage, streamNameOfStreamMessage } from '../utils/recipient';
 
@@ -47,7 +51,7 @@ export const messageSendComplete = (localMessageId: number): Action => ({
   local_message_id: localMessageId,
 });
 
-export const trySendMessages = (dispatch: Dispatch, getState: GetState): boolean => {
+const trySendMessages = (dispatch, getState): boolean => {
   const state = getState();
   const auth = getAuth(state);
   const outboxToSend = state.outbox.filter(outbox => !outbox.isSent);
@@ -82,7 +86,7 @@ export const trySendMessages = (dispatch: Dispatch, getState: GetState): boolean
         subject: item.subject,
         content: item.markdownContent,
         localId: item.timestamp,
-        eventQueueId: state.session.eventQueueId,
+        eventQueueId: state.session.eventQueueId ?? undefined,
       });
       dispatch(messageSendComplete(item.timestamp));
     });
@@ -93,7 +97,8 @@ export const trySendMessages = (dispatch: Dispatch, getState: GetState): boolean
   }
 };
 
-export const sendOutbox = () => async (dispatch: Dispatch, getState: GetState) => {
+/** Try sending any pending outbox messages for this account, with retries. */
+export const sendOutbox = (): ThunkAction<Promise<void>> => async (dispatch, getState) => {
   const state = getState();
   if (state.outbox.length === 0 || state.session.outboxSending) {
     return;
@@ -122,32 +127,34 @@ const recipientsFromIds = (ids, allUsersById, ownUser) => {
   return result;
 };
 
-type DataFromNarrow = SubsetProperties<
-  Outbox,
-  {| type: mixed, display_recipient: mixed, subject: mixed |},
->;
+// prettier-ignore
+type DataFromNarrow =
+  | SubsetProperties<PmOutbox, {| type: mixed, display_recipient: mixed, subject: mixed |}>
+  | SubsetProperties<StreamOutbox, {| type: mixed, stream_id: mixed, display_recipient: mixed, subject: mixed |}>;
 
-const extractTypeToAndSubjectFromNarrow = (
-  narrow: Narrow,
+const outboxPropertiesForNarrow = (
+  destinationNarrow: Narrow,
+  streamsByName: Map<string, Stream>,
   allUsersById: Map<UserId, UserOrBot>,
   ownUser: UserOrBot,
 ): DataFromNarrow =>
-  caseNarrowPartial(narrow, {
+  caseNarrowPartial(destinationNarrow, {
     pm: ids => ({
       type: 'private',
       display_recipient: recipientsFromIds(ids, allUsersById, ownUser),
       subject: '',
     }),
 
-    // TODO: we shouldn't ever be passing a whole-stream narrow here;
-    //   ensure we don't, then remove this case
-    stream: name => ({ type: 'stream', display_recipient: name, subject: '(no topic)' }),
-
-    topic: (streamName, topic) => ({
-      type: 'stream',
-      display_recipient: streamName,
-      subject: topic,
-    }),
+    topic: (streamName, topic) => {
+      const stream = streamsByName.get(streamName);
+      invariant(stream, 'narrow must be known stream');
+      return {
+        type: 'stream',
+        stream_id: stream.stream_id,
+        display_recipient: stream.name,
+        subject: topic,
+      };
+    },
   });
 
 const getContentPreview = (content: string, state: GlobalState): string => {
@@ -165,10 +172,11 @@ const getContentPreview = (content: string, state: GlobalState): string => {
   }
 };
 
-export const addToOutbox = (narrow: Narrow, content: string) => async (
-  dispatch: Dispatch,
-  getState: GetState,
-) => {
+export const addToOutbox = (
+  destinationNarrow: Narrow,
+  content: string,
+): ThunkAction<Promise<void>> => async (dispatch, getState) => {
+  invariant(isConversationNarrow(destinationNarrow), 'destination narrow must be conversation');
   const state = getState();
   const ownUser = getOwnUser(state);
 
@@ -176,7 +184,12 @@ export const addToOutbox = (narrow: Narrow, content: string) => async (
   dispatch(
     messageSendStart({
       isSent: false,
-      ...extractTypeToAndSubjectFromNarrow(narrow, getAllUsersById(state), ownUser),
+      ...outboxPropertiesForNarrow(
+        destinationNarrow,
+        getStreamsByName(state),
+        getAllUsersById(state),
+        ownUser,
+      ),
       markdownContent: content,
       content: getContentPreview(content, state),
       timestamp: localTime,

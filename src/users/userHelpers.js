@@ -1,7 +1,16 @@
 /* @flow strict-local */
+// $FlowFixMe[untyped-import]
 import uniqby from 'lodash.uniqby';
 
-import type { UserPresence, User, UserId, UserGroup, PresenceState, UserOrBot } from '../types';
+import type {
+  MutedUsersState,
+  UserPresence,
+  User,
+  UserId,
+  UserGroup,
+  PresenceState,
+  UserOrBot,
+} from '../types';
 import { ensureUnreachable } from '../types';
 import { statusFromPresence } from '../utils/presence';
 import { makeUserId } from '../api/idTypes';
@@ -44,7 +53,12 @@ export const sortUserList = (users: UserOrBot[], presences: PresenceState): User
       || x1.full_name.toLowerCase().localeCompare(x2.full_name.toLowerCase()),
   );
 
-export type AutocompleteOption = { user_id: UserId, email: string, full_name: string, ... };
+export type AutocompleteOption = $ReadOnly<{
+  user_id: UserId,
+  email: string,
+  full_name: string,
+  ...
+}>;
 
 export const filterUserList = (
   users: $ReadOnlyArray<UserOrBot>,
@@ -109,7 +123,9 @@ export const getUniqueUsers = (
   users: $ReadOnlyArray<AutocompleteOption>,
 ): $ReadOnlyArray<AutocompleteOption> => uniqby(users, 'email');
 
-export const getUsersAndWildcards = (users: $ReadOnlyArray<AutocompleteOption>) => [
+export const getUsersAndWildcards = (
+  users: $ReadOnlyArray<AutocompleteOption>,
+): $ReadOnlyArray<AutocompleteOption> => [
   // TODO stop using makeUserId on these fake "user IDs"; have some
   //   more-explicit UI logic instead of these pseudo-users.
   { user_id: makeUserId(-1), full_name: 'all', email: '(Notify everyone)' },
@@ -121,6 +137,7 @@ export const getAutocompleteSuggestion = (
   users: $ReadOnlyArray<AutocompleteOption>,
   filter: string = '',
   ownUserId: UserId,
+  mutedUsers: MutedUsersState,
 ): $ReadOnlyArray<AutocompleteOption> => {
   if (users.length === 0) {
     return users;
@@ -130,11 +147,12 @@ export const getAutocompleteSuggestion = (
   const initials = filterUserByInitials(allAutocompleteOptions, filter, ownUserId);
   const contains = filterUserThatContains(allAutocompleteOptions, filter, ownUserId);
   const matchesEmail = filterUserMatchesEmail(users, filter, ownUserId);
-  return getUniqueUsers([...startWith, ...initials, ...contains, ...matchesEmail]);
+  const candidates = getUniqueUsers([...startWith, ...initials, ...contains, ...matchesEmail]);
+  return candidates.filter(user => !mutedUsers.has(user.user_id));
 };
 
 export const getAutocompleteUserGroupSuggestions = (
-  userGroups: UserGroup[],
+  userGroups: $ReadOnlyArray<UserGroup>,
   filter: string = '',
 ): UserGroup[] =>
   userGroups.filter(

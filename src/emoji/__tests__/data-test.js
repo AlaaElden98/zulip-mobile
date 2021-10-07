@@ -18,19 +18,26 @@ describe('codeToEmojiMap', () => {
   test('works for some single-codepoint emoji', () => {
     check('1f44d', '👍', '\u{1f44d}');
     check('1f308', '🌈', '\u{1f308}');
-    check('1f308', '🌈', '\u{1f308}');
   });
-  test('works for some multi-codepoint emoji', () => {
-    check('0030-20e3', '0⃣', '0\u{20e3}');
-    check('002a-20e3', '*⃣', '*\u{20e3}');
-    check('0023-20e3', '#⃣', '#\u{20e3}');
+
+  // test_('works for some multi-codepoint emoji', () => {
+  //   The only multi-codepoint emoji in the list are keypad emoji,
+  //   which are special in a different way.
+
+  test('works for some overridden keypad emoji', () => {
+    check('0030-20e3', '0️⃣', '0\u{fe0f}\u{20e3}');
+    check('002a-20e3', '*️⃣', '*\u{fe0f}\u{20e3}');
+    check('0023-20e3', '#️⃣', '#\u{fe0f}\u{20e3}');
   });
 });
 
 describe('getFilteredEmojis', () => {
-  test('empty query returns all emojis', () => {
+  test('empty query returns many emojis', () => {
     const list = getFilteredEmojis('', {});
-    expect(list).toHaveLength(1560);
+    // 1400 so that we don't have to change the test every time we change the
+    // emoji map, while still ensuring that enough emoji are there that we can
+    // be reasonably confident it's all of them.
+    expect(list.length).toBeGreaterThan(1400);
   });
 
   test('non existing query returns empty list', () => {

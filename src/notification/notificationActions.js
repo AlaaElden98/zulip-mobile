@@ -1,7 +1,7 @@
 /* @flow strict-local */
 import { Platform } from 'react-native';
 
-import type { Account, Dispatch, GetState, Identity, Action } from '../types';
+import type { Account, Dispatch, Identity, Action, ThunkAction } from '../types';
 import * as api from '../api';
 import {
   getNotificationToken,
@@ -10,14 +10,14 @@ import {
   getAccountFromNotificationData,
 } from '.';
 import type { Notification } from './types';
-import { getAuth, getActiveAccount } from '../selectors';
-import { getSession, getAccounts } from '../directSelectors';
+import { getAuth } from '../selectors';
+import { getGlobalSession, getAccounts } from '../directSelectors';
 import { GOT_PUSH_TOKEN, ACK_PUSH_TOKEN, UNACK_PUSH_TOKEN } from '../actionConstants';
 import { identityOfAccount, authOfAccount } from '../account/accountMisc';
 import { getAllUsersByEmail, getOwnUserId } from '../users/userSelectors';
 import { doNarrow } from '../message/messagesActions';
 import { accountSwitch } from '../account/accountActions';
-import { getIdentities } from '../account/accountsSelectors';
+import { getIdentities, getAccount } from '../account/accountsSelectors';
 
 export const gotPushToken = (pushToken: string | null): Action => ({
   type: GOT_PUSH_TOKEN,
@@ -35,9 +35,9 @@ const ackPushToken = (pushToken: string, identity: Identity): Action => ({
   pushToken,
 });
 
-export const narrowToNotification = (data: ?Notification) => (
-  dispatch: Dispatch,
-  getState: GetState,
+export const narrowToNotification = (data: ?Notification): ThunkAction<void> => (
+  dispatch,
+  getState,
 ) => {
   if (!data) {
     return;
@@ -78,8 +78,8 @@ const sendPushToken = async (dispatch: Dispatch, account: Account | void, pushTo
 };
 
 /** Tell all logged-in accounts' servers about our device token, as needed. */
-export const sendAllPushToken = () => async (dispatch: Dispatch, getState: GetState) => {
-  const { pushToken } = getSession(getState());
+export const sendAllPushToken = (): ThunkAction<Promise<void>> => async (dispatch, getState) => {
+  const { pushToken } = getGlobalSession(getState());
   if (pushToken === null) {
     return;
   }
@@ -87,28 +87,42 @@ export const sendAllPushToken = () => async (dispatch: Dispatch, getState: GetSt
   await Promise.all(accounts.map(account => sendPushToken(dispatch, account, pushToken)));
 };
 
-/** Tell the active account's server about our device token, if needed. */
-export const initNotifications = () => async (dispatch: Dispatch, getState: GetState) => {
-  const { pushToken } = getSession(getState());
+/** Tell this account's server about our device token, if needed. */
+export const initNotifications = (): ThunkAction<Promise<void>> => async (dispatch, getState) => {
+  const { pushToken } = getGlobalSession(getState());
   if (pushToken === null) {
-    // We don't have the token yet.  When we learn it, the listener will
-    // update this and all other logged-in servers.  Try to learn it.
+    // Probably, we just don't have the token yet.  When we learn it,
+    // the listener will update this and all other logged-in servers.
+    // Try to learn it.
     //
-    // On Android this shouldn't happen -- our Android-native code requests
-    // the token early in startup and fires the event that tells it to our
-    // JS code -- but it's harmless to try again.
+    // Or, if we *have* gotten something for the token and it was
+    // `null`, we're probably on Android; see note on
+    // `SessionState.pushToken`. It's harmless to call
+    // `getNotificationToken` in that case; it does nothing on
+    // Android.
     //
-    // On iOS this is normal because getting the token may involve showing
-    // the user a permissions modal, so we defer that until this point.
+    // On iOS this is normal because getting the token may involve
+    // showing the user a permissions modal, so we defer that until
+    // this point.
     getNotificationToken();
     return;
   }
-  const account = getActiveAccount(getState());
+  const account = getAccount(getState());
   await sendPushToken(dispatch, account, pushToken);
 };
 
-export const tryStopNotifications = () => async (dispatch: Dispatch, getState: GetState) => {
+/** Ask this account's server to stop sending notifications to this device. */
+// TODO: We don't call this in enough situations: see #3469.
+//
+// Also, doing this exclusively from the device is inherently unreliable;
+// you should be able to log in from elsewhere and cut the device off from
+// your account, including notifications, even when you don't have the
+// device in your possession.  That's zulip/zulip#17939.
+export const tryStopNotifications = (): ThunkAction<Promise<void>> => async (
+  dispatch,
+  getState,
+) => {
   const auth = getAuth(getState());
-  const { ackedPushToken } = getActiveAccount(getState());
+  const { ackedPushToken } = getAccount(getState());
   innerStopNotifications(auth, ackedPushToken, dispatch);
 };

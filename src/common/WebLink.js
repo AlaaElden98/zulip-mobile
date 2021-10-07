@@ -1,48 +1,34 @@
 /* @flow strict-local */
 
-import React, { PureComponent } from 'react';
+import React from 'react';
+import type { Node } from 'react';
 
-import type { Dispatch } from '../types';
-import { connect } from '../react-redux';
 import Label from './Label';
-import openLink from '../utils/openLink';
-import { getCurrentRealm } from '../selectors';
+import { openLinkEmbedded } from '../utils/openLink';
 import { BRAND_COLOR, createStyleSheet } from '../styles';
 
 type Props = $ReadOnly<{|
-  dispatch: Dispatch,
   label: string,
-  href: string,
-  realm: URL,
+  url: URL,
 |}>;
+
+const componentStyles = createStyleSheet({
+  link: {
+    color: BRAND_COLOR,
+  },
+});
 
 /**
  * A button styled like a web link.
- *
- * @prop label - Text of the button.
- * @prop href - URL address to open on press.
- * @prop realm - Current realm. Used if the `href` property is relative.
  */
-class WebLink extends PureComponent<Props> {
-  handlePress = () => {
-    const { realm, href } = this.props;
-    openLink(new URL(href, realm).toString());
-  };
-
-  styles = createStyleSheet({
-    link: {
-      marginTop: 10,
-      fontSize: 15,
-      color: BRAND_COLOR,
-      textAlign: 'right',
-    },
-  });
-
-  render() {
-    return <Label style={this.styles.link} text={this.props.label} onPress={this.handlePress} />;
-  }
+export default function WebLink(props: Props): Node {
+  return (
+    <Label
+      style={componentStyles.link}
+      text={props.label}
+      onPress={() => {
+        openLinkEmbedded(props.url.toString());
+      }}
+    />
+  );
 }
-
-export default connect(state => ({
-  realm: getCurrentRealm(state),
-}))(WebLink);

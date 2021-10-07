@@ -1,38 +1,32 @@
 /* @flow strict-local */
 
-import React, { PureComponent } from 'react';
+import React, { useCallback } from 'react';
+import type { Node } from 'react';
 
-import type { Dispatch, Narrow, Stream } from '../types';
-import { connect } from '../react-redux';
+import type { Narrow } from '../types';
+import { useSelector, useDispatch } from '../react-redux';
 import { getStreams } from '../selectors';
 import { streamNameOfNarrow, streamNarrow } from '../utils/narrow';
 import NavButton from '../nav/NavButton';
 import { doNarrow } from '../actions';
 
 type Props = $ReadOnly<{|
-  dispatch: Dispatch,
   narrow: Narrow,
   color: string,
-  streams: Stream[],
 |}>;
 
-class ExtraNavButtonTopic extends PureComponent<Props> {
-  handlePress = () => {
-    const { dispatch, narrow, streams } = this.props;
+export default function ExtraNavButtonTopic(props: Props): Node {
+  const { narrow, color } = props;
+  const dispatch = useDispatch();
+  const streams = useSelector(getStreams);
+
+  const handlePress = useCallback(() => {
     const streamName = streamNameOfNarrow(narrow);
     const stream = streams.find(x => x.name === streamName);
     if (stream) {
       dispatch(doNarrow(streamNarrow(stream.name)));
     }
-  };
+  }, [dispatch, narrow, streams]);
 
-  render() {
-    const { color } = this.props;
-
-    return <NavButton name="arrow-up" color={color} onPress={this.handlePress} />;
-  }
+  return <NavButton name="arrow-up" color={color} onPress={handlePress} />;
 }
-
-export default connect(state => ({
-  streams: getStreams(state),
-}))(ExtraNavButtonTopic);

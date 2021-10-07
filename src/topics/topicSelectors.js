@@ -1,22 +1,15 @@
 /* @flow strict-local */
 import { createSelector } from 'reselect';
 
-import type {
-  Narrow,
-  GlobalState,
-  Selector,
-  StreamsState,
-  TopicExtended,
-  TopicsState,
-} from '../types';
+import type { Narrow, Selector, StreamsState, TopicExtended, TopicsState } from '../types';
 import { getMute, getStreams, getTopics } from '../directSelectors';
-import { getUnreadStreams } from '../unread/unreadModel';
-import { getShownMessagesForNarrow } from '../chat/narrowsSelectors';
+import { getUnread, getUnreadCountForTopic } from '../unread/unreadModel';
 import { getStreamsById } from '../subscriptions/subscriptionSelectors';
 import { NULL_ARRAY } from '../nullObjects';
 import { isStreamNarrow, streamNameOfNarrow } from '../utils/narrow';
+import { isTopicMuted } from '../mute/muteModel';
 
-export const getTopicsForNarrow: Selector<string[], Narrow> = createSelector(
+export const getTopicsForNarrow: Selector<$ReadOnlyArray<string>, Narrow> = createSelector(
   (state, narrow) => narrow,
   state => getTopics(state),
   state => getStreams(state),
@@ -44,28 +37,16 @@ export const getTopicsForStream: Selector<?(TopicExtended[]), number> = createSe
   (state, streamId) => getTopics(state)[streamId],
   state => getMute(state),
   (state, streamId) => getStreamsById(state).get(streamId),
-  state => getUnreadStreams(state),
-  (topicList, mute, stream, unreadStreams) => {
+  state => getUnread(state),
+  (topicList, mute, stream, unread) => {
     if (!topicList || !stream) {
       return undefined;
     }
 
     return topicList.map(({ name, max_id }) => {
-      const isMuted = !!mute.find(x => x[0] === stream.name && x[1] === name);
-      const unreadStream = unreadStreams.find(
-        x => x.stream_id === stream.stream_id && x.topic === name,
-      );
-      return {
-        name,
-        max_id,
-        isMuted,
-        unreadCount: unreadStream ? unreadStream.unread_message_ids.length : 0,
-      };
+      const isMuted = isTopicMuted(stream.name, name, mute);
+      const unreadCount = getUnreadCountForTopic(unread, stream.stream_id, name);
+      return { name, max_id, isMuted, unreadCount };
     });
   },
 );
-
-export const getLastMessageTopic = (state: GlobalState, narrow: Narrow): string => {
-  const messages = getShownMessagesForNarrow(state, narrow);
-  return messages.length === 0 ? '' : messages[messages.length - 1].subject;
-};

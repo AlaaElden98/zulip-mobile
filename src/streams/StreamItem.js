@@ -1,7 +1,24 @@
 /* @flow strict-local */
 import React, { useContext } from 'react';
+import type { Node } from 'react';
 import { View } from 'react-native';
+// $FlowFixMe[untyped-import]
+import { useActionSheet } from '@expo/react-native-action-sheet';
+import invariant from 'invariant';
 
+import { showStreamActionSheet } from '../action-sheets';
+import type { ShowActionSheetWithOptions } from '../action-sheets';
+import { TranslationContext } from '../boot/TranslationProvider';
+import { useDispatch, useSelector } from '../react-redux';
+import {
+  getAuth,
+  getFlags,
+  getSubscriptionsById,
+  getStreamsById,
+  getStreamsByName,
+  getOwnUser,
+  getSettings,
+} from '../selectors';
 import styles, { createStyleSheet, ThemeContext } from '../styles';
 import { RawLabel, Touchable, UnreadCount, ZulipSwitch } from '../common';
 import { foregroundColorFromBackground } from '../utils/color';
@@ -25,15 +42,15 @@ const componentStyles = createStyleSheet({
 type Props = $ReadOnly<{|
   name: string,
   description?: string,
-  isMuted?: boolean,
-  isPrivate?: boolean,
+  isMuted: boolean,
+  isPrivate: boolean,
+  isSubscribed?: boolean,
   color?: string,
   backgroundColor?: string,
 
   unreadCount?: number,
   iconSize: number,
   showSwitch?: boolean,
-  isSwitchedOn?: boolean,
   onPress: (name: string) => void,
   onSwitch?: (name: string, newValue: boolean) => void,
 |}>;
@@ -48,31 +65,46 @@ type Props = $ReadOnly<{|
  * @prop description - the stream's description
  * @prop isMuted - false for a Stream; !sub.in_home_view for Subscription
  * @prop isPrivate - .invite_only for a Stream or a Subscription
+ * @prop isSubscribed - whether the user is subscribed to the stream
  * @prop color - if provided, MUST be .color on a Subscription
  * @prop backgroundColor - if provided, MUST be .color on a Subscription
  *
  * @prop unreadCount - number of unread messages
  * @prop iconSize
  * @prop showSwitch - whether to show a toggle switch (ZulipSwitch)
- * @prop isSwitchedOn - initial value of the toggle switch, if present
  * @prop onPress - press handler for the item; receives the stream name
  * @prop onSwitch - if switch exists; receives stream name and new value
  */
-export default function StreamItem(props: Props) {
+export default function StreamItem(props: Props): Node {
   const {
     name,
     description,
     color,
     backgroundColor,
-    isPrivate = false,
-    isMuted = false,
+    isPrivate,
+    isMuted,
+    isSubscribed = false,
     iconSize,
     showSwitch = false,
-    isSwitchedOn = false,
     unreadCount,
     onPress,
     onSwitch,
   } = props;
+
+  const showActionSheetWithOptions: ShowActionSheetWithOptions = useActionSheet()
+    .showActionSheetWithOptions;
+  const _ = useContext(TranslationContext);
+  const dispatch = useDispatch();
+  const backgroundData = useSelector(state => ({
+    auth: getAuth(state),
+    ownUser: getOwnUser(state),
+    streams: getStreamsById(state),
+    subscriptions: getSubscriptionsById(state),
+    flags: getFlags(state),
+    userSettingStreamNotification: getSettings(state).streamNotification,
+  }));
+  const stream = useSelector(state => getStreamsByName(state).get(name));
+  invariant(stream !== undefined, 'No stream with provided stream name was found.');
 
   const { backgroundColor: themeBackgroundColor, color: themeColor } = useContext(ThemeContext);
 
@@ -89,7 +121,17 @@ export default function StreamItem(props: Props) {
       : themeColor;
 
   return (
-    <Touchable onPress={() => onPress(name)}>
+    <Touchable
+      onPress={() => onPress(name)}
+      onLongPress={() => {
+        showStreamActionSheet({
+          showActionSheetWithOptions,
+          callbacks: { dispatch, _ },
+          backgroundData,
+          streamId: stream.stream_id,
+        });
+      }}
+    >
       <View style={wrapperStyle}>
         <StreamIcon size={iconSize} color={iconColor} isMuted={isMuted} isPrivate={isPrivate} />
         <View style={componentStyles.text}>
@@ -111,13 +153,13 @@ export default function StreamItem(props: Props) {
         <UnreadCount color={iconColor} count={unreadCount} />
         {showSwitch && (
           <ZulipSwitch
-            value={!!isSwitchedOn}
+            value={!!isSubscribed}
             onValueChange={(newValue: boolean) => {
               if (onSwitch) {
                 onSwitch(name, newValue);
               }
             }}
-            disabled={!isSwitchedOn && isPrivate}
+            disabled={!isSubscribed && isPrivate}
           />
         )}
       </View>

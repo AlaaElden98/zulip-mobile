@@ -1,10 +1,12 @@
 /* @flow strict-local */
 
 import React, { PureComponent } from 'react';
+import type { Node } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import type { Narrow } from '../types';
 import { Label } from '../common';
+import { TimeoutError } from '../utils/async';
 
 const styles = StyleSheet.create({
   container: {
@@ -25,10 +27,16 @@ type Props = $ReadOnly<{|
 |}>;
 
 export default class FetchError extends PureComponent<Props> {
-  render() {
+  render(): Node {
     return (
       <View style={styles.container}>
-        <Label style={styles.text} text="Oops! Something went wrong." />
+        {(() => {
+          if (this.props.error instanceof TimeoutError) {
+            return <Label style={styles.text} text="Request timed out." />;
+          } else {
+            return <Label style={styles.text} text="Oops! Something went wrong." />;
+          }
+        })()}
       </View>
     );
   }

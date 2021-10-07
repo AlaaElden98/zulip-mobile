@@ -1,62 +1,19 @@
 /* @flow strict-local */
 
 import React, { PureComponent } from 'react';
+import type { Node, ComponentType } from 'react';
 import { AppState, View, Platform, NativeModules } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import * as ScreenOrientation from 'expo-screen-orientation';
 
-import type { Node as React$Node } from 'react';
 import type { Dispatch, Orientation as OrientationT } from '../types';
 import { createStyleSheet } from '../styles';
 import { connect } from '../react-redux';
 import { getUnreadByHuddlesMentionsAndPMs } from '../selectors';
-import {
-  handleInitialNotification,
-  NotificationListener,
-  notificationOnAppActive,
-} from '../notification';
+import { handleInitialNotification, NotificationListener } from '../notification';
 import { ShareReceivedListener, handleInitialShare } from '../sharing';
 import { appOnline, appOrientation } from '../actions';
 import PresenceHeartbeat from '../presence/PresenceHeartbeat';
-
-/**
- * Part of the interface from react-native-netinfo.
- * https://github.com/react-native-community/react-native-netinfo/tree/v3.2.1
- */
-// TODO: upgrade to 4.x.x so that we can use the `flow-typed` versions.
-// Requires RN 0.60+.
-type NetInfoStateType =
-  | 'unknown'
-  | 'none'
-  | 'cellular'
-  | 'wifi'
-  | 'bluetooth'
-  | 'ethernet'
-  | 'wimax'
-  | 'vpn'
-  | 'other';
-
-type NetInfoConnectedDetails = {
-  isConnectionExpensive: boolean,
-  ...
-};
-
-type NetInfoState = {
-  /** The type of the current connection. */
-  type: NetInfoStateType,
-
-  /** Whether there is an active network connection. Note that this DOES NOT
-      mean that the Internet is reachable. */
-  isConnected: boolean,
-
-  /**
-   * This actually has a more complicated type whose exact shape is dependent on
-   * the value of `type`, above. (Flow could describe it, but we don't have a
-   * use for it yet.)
-   */
-  details: null | NetInfoConnectedDetails,
-  ...
-};
 
 const styles = createStyleSheet({
   wrapper: {
@@ -66,10 +23,20 @@ const styles = createStyleSheet({
   },
 });
 
-type Props = $ReadOnly<{|
-  dispatch: Dispatch,
-  children: React$Node,
+type OuterProps = $ReadOnly<{|
+  children: Node,
+|}>;
+
+type SelectorProps = $ReadOnly<{|
   unreadCount: number,
+|}>;
+
+type Props = $ReadOnly<{|
+  ...OuterProps,
+
+  // from `connect`
+  dispatch: Dispatch,
+  ...SelectorProps,
 |}>;
 
 type OrientationLookup = {|
@@ -84,7 +51,7 @@ const orientationLookup: OrientationLookup = {
   [ScreenOrientation.Orientation.LANDSCAPE_RIGHT]: 'LANDSCAPE',
 };
 
-class AppEventHandlers extends PureComponent<Props> {
+class AppEventHandlersInner extends PureComponent<Props> {
   /** NetInfo disconnection callback. */
   netInfoDisconnectCallback: (() => void) | null = null;
 
@@ -96,12 +63,52 @@ class AppEventHandlers extends PureComponent<Props> {
     dispatch(appOrientation(orientationLookup[orientation]));
   };
 
-  // https://github.com/react-native-community/react-native-netinfo/tree/v3.2.1
-  handleConnectivityChange = (netInfoState: NetInfoState) => {
+  handleConnectivityChange = netInfoState => {
     const { dispatch } = this.props;
-    const { type: connectionType } = netInfoState;
-    const isConnected = connectionType !== 'none' && connectionType !== 'unknown';
-    dispatch(appOnline(isConnected));
+
+    dispatch(
+      appOnline(
+        // From reading code at @react-native-community/net-info v6.0.0 (the
+        // docs and types don't really give these answers):
+        //
+        // This will be `null` on both platforms while the first known value
+        // of `true` or `false` is being shipped across the asynchronous RN
+        // bridge.
+        //
+        // On Android, it shouldn't otherwise be `null`. The value is set to the
+        // result of an Android function that only returns a boolean:
+        // https://developer.android.com/reference/android/net/NetworkInfo#isConnected()
+        //
+        // On iOS, this can also be `null` while the app asynchronously
+        // evaluates whether a network change should cause this to go from
+        // `false` to `true`. Read on for details (gathered from
+        // src/internal/internetReachability.ts in the library).
+        //
+        // 1. A request loop is started. A HEAD request is made to
+        //    https://clients3.google.com/generate_204, with a timeout of
+        //    15s (`reachabilityRequestTimeout`), to see if the Internet is
+        //    reachable.
+        //    - If the `fetch` succeeds and a 204 is received, this will be
+        //      made `true`. We'll then sleep for 60s before making the
+        //      request again.
+        //    - If the `fetch` succeeds and a 204 is not received, or if the
+        //      fetch fails, or if the timeout expires, this will be made
+        //      `false`. We'll then sleep for only 5s before making the
+        //      request again.
+        // 2. The request loop is interrupted if we get a
+        //    'netInfo.networkStatusDidChange' event from the library's
+        //    native code, signaling a change in the network state. If that
+        //    change would make `netInfoState.type` become or remain
+        //    something good (i.e., not 'none' or 'unknown'), and this
+        //    (`.isInternetReachable`) is currently `false`, then this will
+        //    be made `null`, and the request loop described above will
+        //    start again.
+        //
+        // (Several of those parameters are configurable -- timeout durations,
+        // URL, etc.)
+        netInfoState.isInternetReachable,
+      ),
+    );
   };
 
   /** For the type, see docs: https://reactnative.dev/docs/appstate */
@@ -110,13 +117,10 @@ class AppEventHandlers extends PureComponent<Props> {
     if (state === 'background' && Platform.OS === 'android') {
       NativeModules.BadgeCountUpdaterModule.setBadgeCount(unreadCount);
     }
-    if (state === 'active') {
-      notificationOnAppActive();
-    }
   };
 
   notificationListener = new NotificationListener(this.props.dispatch);
-  shareListener = new ShareReceivedListener(this.props.dispatch);
+  shareListener = new ShareReceivedListener();
 
   handleMemoryWarning = () => {
     // Release memory here
@@ -125,9 +129,15 @@ class AppEventHandlers extends PureComponent<Props> {
   componentDidMount() {
     const { dispatch } = this.props;
     handleInitialNotification(dispatch);
-    handleInitialShare(dispatch);
+    handleInitialShare();
 
+    NetInfo.configure({
+      // This is the default, as of 6.0.0, but `OfflineNotice` depends on this
+      // value being stable.
+      reachabilityRequestTimeout: 15 * 1000,
+    });
     this.netInfoDisconnectCallback = NetInfo.addEventListener(this.handleConnectivityChange);
+
     AppState.addEventListener('change', this.handleAppStateChange);
     AppState.addEventListener('memoryWarning', this.handleMemoryWarning);
     ScreenOrientation.addOrientationChangeListener(this.handleOrientationChange);
@@ -157,6 +167,8 @@ class AppEventHandlers extends PureComponent<Props> {
   }
 }
 
-export default connect(state => ({
+const AppEventHandlers: ComponentType<OuterProps> = connect(state => ({
   unreadCount: getUnreadByHuddlesMentionsAndPMs(state),
-}))(AppEventHandlers);
+}))(AppEventHandlersInner);
+
+export default AppEventHandlers;

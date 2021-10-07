@@ -1,13 +1,14 @@
 /* @flow strict-local */
+// $FlowFixMe[untyped-import]
 import isEqual from 'lodash.isequal';
 
 import type { Auth, FlagsState } from '../types';
 import type { Props } from './MessageList';
 import type { UpdateStrategy } from '../message/messageUpdates';
 import htmlBody from './html/htmlBody';
-import contentHtmlFromPieceDescriptors from './html/contentHtmlFromPieceDescriptors';
+import messageListElementHtml from './html/messageListElementHtml';
 import messageTypingAsHtml from './html/messageTypingAsHtml';
-import { getMessageTransitionProps, getMessageUpdateStrategy } from '../message/messageUpdates';
+import { getMessageUpdateStrategy } from '../message/messageUpdates';
 
 export type WebViewInboundEventContent = {|
   type: 'content',
@@ -47,15 +48,15 @@ export type WebViewInboundEvent =
 
 const updateContent = (prevProps: Props, nextProps: Props): WebViewInboundEventContent => {
   const content = htmlBody(
-    contentHtmlFromPieceDescriptors(
-      nextProps.backgroundData,
-      nextProps.narrow,
-      nextProps.htmlPieceDescriptorsForShownMessages,
-    ),
+    messageListElementHtml({
+      backgroundData: nextProps.backgroundData,
+      narrow: nextProps.narrow,
+      messageListElements: nextProps.messageListElementsForShownMessages,
+      _: nextProps._,
+    }),
     nextProps.showMessagePlaceholders,
   );
-  const transitionProps = getMessageTransitionProps(prevProps, nextProps);
-  const updateStrategy = getMessageUpdateStrategy(transitionProps);
+  const updateStrategy = getMessageUpdateStrategy(prevProps, nextProps);
 
   return {
     type: 'content',
@@ -98,19 +99,23 @@ export default function generateInboundEvents(
   prevProps: Props,
   nextProps: Props,
 ): WebViewInboundEvent[] {
+  const uevents = [];
+
   if (
     !isEqual(
-      prevProps.htmlPieceDescriptorsForShownMessages,
-      nextProps.htmlPieceDescriptorsForShownMessages,
+      prevProps.messageListElementsForShownMessages,
+      nextProps.messageListElementsForShownMessages,
     )
     || !equalFlagsExcludingRead(prevProps.backgroundData.flags, nextProps.backgroundData.flags)
   ) {
-    return [updateContent(prevProps, nextProps)];
+    uevents.push(updateContent(prevProps, nextProps));
   }
 
-  const uevents = [];
-
   if (prevProps.backgroundData.flags.read !== nextProps.backgroundData.flags.read) {
+    // TODO: Don't consider messages outside the narrow we're viewing.
+    // TODO: Only include messages that we've just marked as read. We're
+    // currently including some read messages only because we've just
+    // learned about them from a fetch.
     const messageIds = Object.keys(nextProps.backgroundData.flags.read)
       .filter(id => !prevProps.backgroundData.flags.read[+id])
       .map(id => +id);

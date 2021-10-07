@@ -131,17 +131,17 @@ export const specialNarrow = (operand: string): Narrow => {
   throw new Error(`specialNarrow: got unsupported operand: ${operand}`);
 };
 
-export const STARRED_NARROW = specialNarrow('starred');
+export const STARRED_NARROW: Narrow = specialNarrow('starred');
 
-export const STARRED_NARROW_STR = keyFromNarrow(STARRED_NARROW);
+export const STARRED_NARROW_STR: string = keyFromNarrow(STARRED_NARROW);
 
-export const MENTIONED_NARROW = specialNarrow('mentioned');
+export const MENTIONED_NARROW: Narrow = specialNarrow('mentioned');
 
-export const MENTIONED_NARROW_STR = keyFromNarrow(MENTIONED_NARROW);
+export const MENTIONED_NARROW_STR: string = keyFromNarrow(MENTIONED_NARROW);
 
-export const ALL_PRIVATE_NARROW = specialNarrow('private');
+export const ALL_PRIVATE_NARROW: Narrow = specialNarrow('private');
 
-export const ALL_PRIVATE_NARROW_STR = keyFromNarrow(ALL_PRIVATE_NARROW);
+export const ALL_PRIVATE_NARROW_STR: string = keyFromNarrow(ALL_PRIVATE_NARROW);
 
 export const streamNarrow = (stream: string): Narrow =>
   Object.freeze({ type: 'stream', streamName: stream });
@@ -387,6 +387,20 @@ export const isStreamOrTopicNarrow = (narrow?: Narrow): boolean =>
 export const isSearchNarrow = (narrow?: Narrow): boolean =>
   !!narrow && caseNarrowDefault(narrow, { search: () => true }, () => false);
 
+export const isMentionedNarrow = (narrow?: Narrow): boolean =>
+  !!narrow && caseNarrowDefault(narrow, { mentioned: () => true }, () => false);
+
+/**
+ * Whether the narrow represents a single whole conversation.
+ *
+ * A conversation is the smallest unit that discussions are threaded into:
+ * either a specific topic in a stream, or a PM thread (either 1:1 or group).
+ *
+ * When sending a message, its destination is identified by a conversation.
+ */
+export const isConversationNarrow = (narrow: Narrow): boolean =>
+  caseNarrowDefault(narrow, { topic: () => true, pm: () => true }, () => false);
+
 /**
  * Convert the narrow into the form used in the Zulip API at get-messages.
  */
@@ -464,7 +478,14 @@ export const isMessageInNarrow = (
     // Adding a case here?  Be sure to add to getNarrowsForMessage, too.
   });
 
-export const canSendToNarrow = (narrow: Narrow): boolean =>
+/**
+ * Whether we show the compose box on this narrow's message list.
+ *
+ * This is really a UI choice that belongs to a specific part of the UI.
+ * It's here for now because several files refer to it.
+ */
+// TODO make this appropriately part of the UI code.
+export const showComposeBoxOnNarrow = (narrow: Narrow): boolean =>
   caseNarrow(narrow, {
     pm: () => true,
     stream: () => true,
@@ -529,7 +550,7 @@ export const getNarrowsForMessage = (
  */
 // TODO: probably make this a private local helper of its one caller,
 //   now that it's free of fiddly details from the Narrow data structure
-export const getNarrowForReply = (message: Message | Outbox, ownUserId: UserId) => {
+export const getNarrowForReply = (message: Message | Outbox, ownUserId: UserId): Narrow => {
   if (message.type === 'private') {
     return pmNarrowFromRecipients(pmKeyRecipientsFromMessage(message, ownUserId));
   } else {

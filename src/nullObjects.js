@@ -1,9 +1,9 @@
 /* @flow strict-local */
 import type { Subscription } from './types';
 
-export const NULL_OBJECT = Object.freeze({});
+export const NULL_OBJECT: {||} = Object.freeze({});
 
-export const NULL_ARRAY = Object.freeze([]);
+export const NULL_ARRAY: $ReadOnlyArray<empty> = Object.freeze([]);
 
 /*
  * All the below objects are DEPRECATED; rather than using one, choose the
@@ -14,11 +14,11 @@ export const NULL_ARRAY = Object.freeze([]);
  *
  * For examples of explicit fallback behavior, see:
  *
- *  * Selector `getActiveAccount` -- throw an error.  Good when missing data
- *    is a bug and the caller can't reasonably do without it.  This is the
- *    right thing for most callers of most selectors.
+ *  * Selector `getAuth` -- throw an error.  Good when missing data is a bug
+ *    and the caller can't reasonably do without it.  This is the right
+ *    thing for most callers of most selectors.
  *
- *  * Selectors `tryGetActiveAccount` and `tryGetAuth` -- return undefined,
+ *  * Selectors `tryGetActiveAccountState` and `tryGetAuth` -- return undefined,
  *    and reflect that in the type.  Caller then gets to decide what to do;
  *    see callsites of `tryGetAuth`.
  *

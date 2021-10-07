@@ -60,7 +60,8 @@ describe('flagsReducer', () => {
 
     const action = deepFreeze({
       type: MESSAGE_FETCH_COMPLETE,
-      messages: [{ id: 1, flags: ['read'] }, { id: 2, flags: [] }],
+      // prettier-ignore
+      messages: [{ id: 1, flags: ['read'] }, { id: 2, flags: [] }]
     });
 
     const expectedState = {
@@ -76,21 +77,6 @@ describe('flagsReducer', () => {
   });
 
   describe('EVENT_NEW_MESSAGE', () => {
-    test('when no flags key is passed, do not fail, do nothing', () => {
-      const prevState = NULL_OBJECT;
-
-      const action = deepFreeze({
-        type: EVENT_NEW_MESSAGE,
-        message: { id: 2 },
-      });
-
-      const expectedState = {};
-
-      const actualState = flagsReducer(prevState, action);
-
-      expect(actualState).toEqual(expectedState);
-    });
-
     test('adds to store flags from new message', () => {
       const prevState = NULL_OBJECT;
 
@@ -119,7 +105,7 @@ describe('flagsReducer', () => {
         type: EVENT_UPDATE_MESSAGE_FLAGS,
         messages: [1],
         flag: 'starred',
-        operation: 'add',
+        op: 'add',
       });
 
       const expectedState = {
@@ -144,7 +130,7 @@ describe('flagsReducer', () => {
         type: EVENT_UPDATE_MESSAGE_FLAGS,
         messages: [1],
         flag: 'starred',
-        operation: 'add',
+        op: 'add',
       });
 
       const expectedState = {
@@ -169,7 +155,7 @@ describe('flagsReducer', () => {
         type: EVENT_UPDATE_MESSAGE_FLAGS,
         messages: [1],
         flag: 'read',
-        operation: 'add',
+        op: 'add',
       });
 
       const expectedState = {
@@ -200,7 +186,7 @@ describe('flagsReducer', () => {
         type: EVENT_UPDATE_MESSAGE_FLAGS,
         messages: [1, 2, 3],
         flag: 'starred',
-        operation: 'add',
+        op: 'add',
       });
 
       const expectedState = {
@@ -230,7 +216,7 @@ describe('flagsReducer', () => {
         type: EVENT_UPDATE_MESSAGE_FLAGS,
         messages: [1],
         flag: 'read',
-        operation: 'remove',
+        op: 'remove',
       });
 
       const expectedState = {
@@ -249,7 +235,7 @@ describe('flagsReducer', () => {
         type: EVENT_UPDATE_MESSAGE_FLAGS,
         messages: [1],
         flag: 'read',
-        operation: 'remove',
+        op: 'remove',
       });
 
       const expectedState = {
@@ -277,7 +263,7 @@ describe('flagsReducer', () => {
         type: EVENT_UPDATE_MESSAGE_FLAGS,
         messages: [1, 2, 3, 4],
         flag: 'starred',
-        operation: 'remove',
+        op: 'remove',
       });
 
       const expectedState = {
@@ -293,7 +279,7 @@ describe('flagsReducer', () => {
       expect(actualState).toEqual(expectedState);
     });
 
-    test('when "all" is true all messages become read', () => {
+    test('when all=true, flag=read, and op=add, all messages become read', () => {
       const prevState = deepFreeze({
         read: {
           1: true,
@@ -305,7 +291,7 @@ describe('flagsReducer', () => {
         type: EVENT_UPDATE_MESSAGE_FLAGS,
         messages: [],
         flag: 'read',
-        operation: 'add',
+        op: 'add',
         all: true,
         allMessages: {
           1: {},

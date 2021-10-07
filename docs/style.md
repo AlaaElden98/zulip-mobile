@@ -3,6 +3,53 @@
 (This is not at all complete.)
 
 
+### Index:
+
+* [Git: commits, commit messages](#git)
+  * [Communicating in the commit message](#commit-message)
+  * [Squashing and not-squashing commits](#commit-series)
+  * [Commit messages, comments, code](#commit-messages-code)
+    * [[link](#update-commit-messages)] Update commit messages when you
+      update a branch.
+    * [[link](#commit-messages-vs-comments)] Commit messages
+      vs. comments.
+  * [Mentioning people](#mentioning-people)
+  * [Mentioning commits](#mentioning-commits)
+* [GitHub: PRs, issues](#github)
+  * [[link](#mention-related-issues)] Mention all related issues in PR
+    or new issue.
+  * [[link](#mention-fixed-issue)] Mention a fixed issue in both PR
+    and commit message.
+  * [[link](#fixes-format)] Write `Fixes: #1234` when fixing an issue.
+* [Language-independent](#language-independent)
+  * [[link](#catch-at-ui)] For exceptions that aren't bugs, catch them
+    in UI code and inform the user.
+  * [[link](#catch-specific)] Only catch specific, expected exceptions.
+* [JavaScript, Flow, JS libraries](#js)
+  * [[link](#types-named-type)] Don't put "type" in the name of a
+    type, usually.
+  * [[link](#invariant-assertions)] Use `invariant` for runtime
+    assertions the type-checker can use.
+  * [[link](#immutable-provide-type)] Always provide a type when
+    writing an empty `Immutable` value.
+  * [[link](#react-function-prop-defaults)] Don't use React
+    `defaultProps` for function components.
+* [Internal to Zulip and our codebase](#zulip)
+  * [Zulip API bindings](#zulip-api-bindings)
+    * [[link](#import-api)] Use `import * as api` and `api.doThing(…)`.
+  * [Zulip data model](#zulip-data-model)
+    * [[link](#avoid-display-recipient)] Avoid using
+      `display_recipient` directly.
+* [WebView: HTML, CSS, JS](#webview)
+  * [HTML](#webview-html)
+    * [[link](#webview-avoid-colliding-classes)] Avoid classes that
+      the server might use in messages.
+  * [Styling/CSS](#webview-styling)
+    * [[link](#px-rem-no-em)] Use `px`, sometimes `rem`, no `em`.
+
+
+<div id="git" />
+
 ## Git: commits, commit messages
 
 ### See also
@@ -21,6 +68,8 @@ major reason we keep high standards for commit clarity.  These tips
 will help you get a lot of value from reading Git history too.
 
 
+<div id="commit-message" />
+
 ### Communicating in the commit message
 
 **See also:** The Zulip guide to [clear and coherent commits][] (same
@@ -28,11 +77,11 @@ link as above.)
 
 
 **Answer in the branch the reviewer's questions.**
-Any time a reviewer asks a "why" question about a PR, we'll want the
-answer to make it into the actual commits.  Or if they find something
-confusing, we'll want it to be clear in the actual commits: ideally
-the code itself makes it clear, or if not then comments or the commit
-messages explain it.
+Any time a reviewer asks a "why" question about a PR, we'll want the answer
+to make it into the actual commits.  Or if they find something confusing,
+we'll want it to be clear in the actual commits: ideally the code itself
+makes it clear, or if not then code comments or the commit messages explain
+it.
 
 
 **Answer questions the reviewer *should* ask.**
@@ -63,6 +112,8 @@ your change:
   provide to [foo-making tool]?  (Where "foo" is an icon, an Xcode
   config file, etc.)
 
+
+<div id="commit-series" />
 
 ### Squashing and not-squashing commits
 
@@ -107,13 +158,19 @@ that the other side was just added.
 [the merge of #3263]: https://github.com/zulip/zulip-mobile/pull/3263#issuecomment-460918886
 
 
+<div id="commit-messages-code" />
+
 ### Commit messages, comments, code
+
+<div id="update-commit-messages" />
 
 **Update commit messages when you update a branch.**
 The commit message is a key part of the content of a commit.
 So when you revise in response to code review feedback, be sure
 to edit the commit message as needed to match.
 
+
+<div id="commit-messages-vs-comments" />
 
 **Commit messages vs. comments.**
 In general:
@@ -131,6 +188,8 @@ In general:
     information clear in the code itself.  Many kinds of information
     don't fit there; for those, use comments.
 
+
+<div id="mentioning-people" />
 
 ### Mentioning people
 
@@ -187,6 +246,12 @@ basically amounts to an @-mention!  Other common lines include
 
 and there's no fixed list; people invent others.
 
+When inventing a label for a metadata line like this, note the
+formatting style: hyphens (`-`) instead of spaces, and in sentence case
+(i.e. capitalized only at the beginning).
+
+
+<div id="mentioning-commits" />
 
 ### Mentioning commits
 
@@ -207,7 +272,11 @@ text; and it's long enough that it's extremely unlikely any given such
 abbreviation will ever be ambiguous.
 
 
+<div id="github" />
+
 ## GitHub: PRs, issues
+
+<div id="mention-related-issues" />
 
 **Mention all related issues in PR or new issue.**
 When you submit a PR, mention in the PR description any issue it's
@@ -227,6 +296,8 @@ Be sure to use the PR (or issue) description, not the title: for
 whatever reason, GitHub doesn't count links in PR titles for creating
 automatic backlinks.
 
+
+<div id="mention-fixed-issue" />
 
 **Mention a fixed issue in both PR and commit message.**
 When you submit a fix for an issue, please refer to it *both*
@@ -249,6 +320,8 @@ include the reference anyway, despite that UI bug in GitHub.  We'll
 live with a little noise on the issue threads, and the references are
 extremely helpful when [reading the Git log](howto/git.md).
 
+
+<div id="fixes-format" />
 
 **Write `Fixes: #1234` when fixing an issue.**
 When a commit fixes an issue, use a line like `Fixes: #1234` at the
@@ -275,7 +348,90 @@ pick just one, and that's the one we use.
 [gh-close-issue-keywords]: https://help.github.com/en/github/managing-your-work-on-github/closing-issues-using-keywords
 
 
-## JavaScript and Flow
+<div id="language-independent" />
+
+## Language-independent
+
+<div id="catch-at-ui" />
+
+**For exceptions that aren't bugs, catch them in UI code and inform
+the user**:
+For some operations -- notably network requests and IO -- it's part of
+a function's interface that it might throw an exception for reasons
+that aren't a bug in anything, just the way the network (etc.) is at
+that moment.  When this kind of exception reaches our UI code, we
+generally want to catch it immediately and inform the user
+appropriately.
+
+(Sometimes we'll want to catch the exception even sooner than that,
+e.g. catching a failed network request in order to retry the request.)
+
+A lot of our existing code doesn't do this.  Typically this means that
+when the user touches a button which is supposed to make an API
+request, and the request fails, nothing happens -- it's as if they
+didn't touch the button at all.  But for new code, and when reworking
+the logic of old code, we make a practice of doing this.
+
+
+<div id="catch-specific" />
+
+**Only catch specific, expected exceptions**:
+When using constructs like JS's `try` / `catch`, keep things tightly
+scoped so that the `catch` block only applies to those exceptions that
+are expected and aren't bugs in the app, like network failures.
+
+Typically this is done by keeping the `try` block tightly scoped,
+around just one statement like `await api.doSomething(…)`.
+Alternatively the `catch` block can be limited to a particular type of
+exception that's specific enough to only cover the expected error;
+this works well in Kotlin but there isn't a great way to do it in JS.
+
+One reason we do this is so that the error handling in the `catch`
+block gets to be tightly focused and know exactly what the error was.
+For example if the `catch` block tells the user "Failed to send
+message", that'd be bad if the truth was that we successfully sent the
+message and then failed at some later step.
+
+More generally, if the exception wasn't expected and instead
+represents a bug, then fundamentally no error-handling logic can
+reliably get the operation back to a good state -- by definition,
+something happened that we weren't expecting -- so it isn't safe to
+pick up and carry on.
+
+Discussion elsewhere:
+[Effective Dart](https://dart.dev/guides/language/effective-dart/usage#error-handling)
+
+
+<div id="js" />
+
+## JavaScript, Flow, JS libraries
+
+<div id="types-named-type" />
+
+**Don't put "type" in the name of a type, usually**:
+Specifically, when naming a type, we generally put "type" in the name
+only if the *values* of the type are themselves to be thought of as
+"the type of" something.
+
+The general principle is that a type's name is a description of the
+values of the type.  If `x` has type `ThingJig`, then `x` should
+indeed be a thing-jig (whatever that might mean.)
+
+So for example we have `export type EmojiType = 'image' | 'unicode'`,
+because its values are interpreted as referring to "image emoji" and
+"Unicode emoji" -- so each value is a particular type of emoji.
+
+Similarly a React `ComponentType` value is *a type of component*: so
+the values include `View` itself, but not any particular instance of
+`View`.
+
+If `FooType` is just the type of "foo"s, try calling it simply `Foo`.
+If there are several types that could fit that name, find a name that
+more specifically expresses how one is different from the others:
+perhaps `FooDetails`, `FooId`, `PartialFoo`, or `FooView`.
+
+
+<div id="invariant-assertions" />
 
 **Use `invariant` for runtime assertions the type-checker can use**:
 If there's a fact you're sure is true at a certain point in the code,
@@ -294,9 +450,59 @@ definitely mean a bug within our own zulip-mobile codebase.
 [flow-invariant-pseudodocs]: https://github.com/facebook/flow/issues/6052
 
 
+<div id="immutable-provide-type" />
+
+**Always provide a type when writing an empty `Immutable` value**:
+Whenever you create an empty `Immutable.Map`, `Immutable.List`, or
+so on, specify the intended type explicitly.  For example:
+```js
+const map: Immutable.Map<number, string> = Immutable.Map(); // good
+
+const map = Immutable.Map(); // BAD -- don't do
+```
+
+This is essential in order to get effective type-checking of the
+code that uses the new collection.  (It's not clear if this is a bug
+in Flow, or a design limitation of Flow, or an issue in the Flow types
+provided by Immutable.js, or some combination.)
+
+
+<div id="react-function-prop-defaults" />
+
+**Don't use React `defaultProps` for function components**:
+When a React function component has a default value for one of its
+props, express that with a normal JS idiom, not with React's
+`defaultProps` feature.  This also means that in the component's type,
+the prop should be marked as optional (with `?:`).
+
+For example, if converting into a function component a class component
+that had a `defaultProps` like so:
+```js
+  static defaultProps = { foo: true };
+```
+a good translation is to use JS object destructuring with a default
+value, with a line like this at the top of the new function:
+```js
+  const { foo = true } = props;
+```
+and to change `foo: boolean` to `foo?: boolean` in the `Props` definition.
+
+The main reason for this is to keep the default, and the fact there is
+a default, visible at the top of the function.  This is helpful for
+reading the component's implementation as well as for looking at its
+interface in order to use it elsewhere.
+
+
+<div id="zulip" />
+
 ## Internal to Zulip and our codebase
 
+
+<div id="zulip-api-bindings" />
+
 ### Zulip API bindings
+
+<div id="import-api" />
 
 **Use `import * as api` and `api.doThing(…)`**: When invoking our
 binding for an endpoint of the Zulip server API, write the code like
@@ -330,7 +536,11 @@ in exactly the same places as we're defining those other values.  The
 apart from related functions at different layers.
 
 
+<div id="zulip-data-model" />
+
 ### Zulip data model
+
+<div id="avoid-display-recipient" />
 
 **Avoid using `display_recipient` directly**: When inspecting a
 `Message` object, or a relative like `Outbox`, never consume its
@@ -346,9 +556,15 @@ code where we're using a given aspect of the `display_recipient`
 semantics, which makes refactoring easier.
 
 
+<div id="webview" />
+
 ## WebView: HTML, CSS, JS
 
+<div id="webview-html" />
+
 ### HTML
+
+<div id="webview-avoid-colliding-classes" />
 
 **Avoid classes that the server might use in messages:** In our own
 HTML in the webview, we avoid using any class names which appear in
@@ -370,7 +586,11 @@ See [chat discussion][class-conflict-chat] for further rationale.
 [class-conflict-chat]: https://chat.zulip.org/#narrow/stream/48-mobile/topic/Weird.20timestamps/near/1075485
 
 
+<div id="webview-styling" />
+
 ### Styling/CSS
+
+<div id="px-rem-no-em" />
 
 **Use `px`, sometimes `rem`, no `em`:** For CSS lengths in the
 webview, we use `rem` for text and `px` for everything else.

@@ -1,5 +1,6 @@
 /* @flow strict-local */
 import React, { PureComponent } from 'react';
+import type { Node, ComponentType } from 'react';
 import { View } from 'react-native';
 import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
 
@@ -27,15 +28,21 @@ const emojiTypeFromReactionType = (reactionType: ReactionType): EmojiType => {
   return 'image';
 };
 
+type OuterProps = $ReadOnly<{|
+  // These should be passed from React Navigation
+  navigation: AppNavigationProp<'message-reactions'>,
+  route: RouteProp<'message-reactions', {| reactionName?: string, messageId: number |}>,
+|}>;
+
 type SelectorProps = $ReadOnly<{|
   message: Message | void,
   ownUserId: UserId,
 |}>;
 
 type Props = $ReadOnly<{|
-  navigation: AppNavigationProp<'message-reactions'>,
-  route: RouteProp<'message-reactions', {| reactionName?: string, messageId: number |}>,
+  ...OuterProps,
 
+  // from `connect`
   dispatch: Dispatch,
   ...SelectorProps,
 |}>;
@@ -46,7 +53,7 @@ type Props = $ReadOnly<{|
  * The `reactionName` nav-prop controls what reaction is focused when the
  * screen first appears.
  */
-class MessageReactionsScreen extends PureComponent<Props> {
+class MessageReactionsScreenInner extends PureComponent<Props> {
   componentDidMount() {
     if (this.props.message === undefined) {
       const { messageId } = this.props.route.params;
@@ -70,7 +77,7 @@ class MessageReactionsScreen extends PureComponent<Props> {
     const { message, route, ownUserId } = this.props;
     const { reactionName } = route.params;
 
-    const content: React$Node = (() => {
+    const content: Node = (() => {
       if (message === undefined) {
         return <View style={styles.flexed} />;
       } else if (message.reactions.length === 0) {
@@ -137,8 +144,12 @@ class MessageReactionsScreen extends PureComponent<Props> {
   }
 }
 
-export default connect<SelectorProps, _, _>((state, props) => ({
-  // message *can* be undefined; see componentDidUpdate for explanation and handling.
-  message: state.messages.get(props.route.params.messageId),
-  ownUserId: getOwnUserId(state),
-}))(MessageReactionsScreen);
+const MessageReactionsScreen: ComponentType<OuterProps> = connect<SelectorProps, _, _>(
+  (state, props) => ({
+    // message *can* be undefined; see componentDidUpdate for explanation and handling.
+    message: state.messages.get(props.route.params.messageId),
+    ownUserId: getOwnUserId(state),
+  }),
+)(MessageReactionsScreenInner);
+
+export default MessageReactionsScreen;

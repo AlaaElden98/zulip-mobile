@@ -1,21 +1,19 @@
 /* @flow strict-local */
 
 import React from 'react';
+import type { Node } from 'react';
 
-import type { Node as React$Node } from 'react';
-import type { Dispatch } from '../types';
-import { connect } from '../react-redux';
+import { useSelector, useDispatch } from '../react-redux';
 import { getSession } from '../directSelectors';
 import { doInitialFetch } from '../actions';
 
 type Props = $ReadOnly<{|
-  needsInitialFetch: boolean,
-  dispatch: Dispatch,
-  children: React$Node,
+  children: Node,
 |}>;
 
-function AppDataFetcher(props: Props) {
-  const { needsInitialFetch, dispatch } = props;
+export default function AppDataFetcher(props: Props): Node {
+  const needsInitialFetch = useSelector(state => getSession(state).needsInitialFetch);
+  const dispatch = useDispatch();
 
   React.useEffect(() => {
     if (needsInitialFetch) {
@@ -25,7 +23,3 @@ function AppDataFetcher(props: Props) {
 
   return props.children;
 }
-
-export default connect(state => ({
-  needsInitialFetch: getSession(state).needsInitialFetch,
-}))(AppDataFetcher);

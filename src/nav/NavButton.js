@@ -1,5 +1,6 @@
 /* @flow strict-local */
-import React, { PureComponent } from 'react';
+import React from 'react';
+import type { Node } from 'react';
 import type { TextStyleProp } from 'react-native/Libraries/StyleSheet/StyleSheet';
 
 import { BRAND_COLOR, createStyleSheet } from '../styles';
@@ -8,32 +9,25 @@ import type { IconNames } from '../common/Icons';
 import NavButtonGeneral from './NavButtonGeneral';
 
 type Props = $ReadOnly<{|
-  color: string,
+  color?: string,
   style?: TextStyleProp,
   name: IconNames,
   onPress: () => void,
   accessibilityLabel?: string,
 |}>;
 
-export default class NavButton extends PureComponent<Props> {
-  static defaultProps = {
-    color: BRAND_COLOR,
-  };
+const componentStyles = createStyleSheet({
+  navButtonIcon: {
+    textAlign: 'center',
+  },
+});
 
-  styles = createStyleSheet({
-    navButtonIcon: {
-      textAlign: 'center',
-      fontSize: 26,
-    },
-  });
+export default function NavButton(props: Props): Node {
+  const { name, style, color = BRAND_COLOR, onPress, accessibilityLabel } = props;
 
-  render() {
-    const { name, style, color, onPress, accessibilityLabel } = this.props;
-
-    return (
-      <NavButtonGeneral onPress={onPress} accessibilityLabel={accessibilityLabel}>
-        <Icon style={[this.styles.navButtonIcon, style]} color={color} name={name} />
-      </NavButtonGeneral>
-    );
-  }
+  return (
+    <NavButtonGeneral onPress={onPress} accessibilityLabel={accessibilityLabel}>
+      <Icon size={24} style={[componentStyles.navButtonIcon, style]} color={color} name={name} />
+    </NavButtonGeneral>
+  );
 }

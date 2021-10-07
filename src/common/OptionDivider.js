@@ -1,21 +1,19 @@
 /* @flow strict-local */
-import React, { PureComponent } from 'react';
+import React, { useContext } from 'react';
+import type { Node } from 'react';
 import { View } from 'react-native';
 
-import type { ThemeData } from '../styles';
-import { ThemeContext } from '../styles';
+import { ThemeContext, createStyleSheet } from '../styles';
 
-export default class OptionDivider extends PureComponent<{||}> {
-  static contextType = ThemeContext;
-  context: ThemeData;
+const componentStyles = createStyleSheet({
+  divider: {
+    borderBottomWidth: 1,
+  },
+});
 
-  styles = {
-    divider: {
-      borderBottomWidth: 1,
-    },
-  };
-
-  render() {
-    return <View style={[this.styles.divider, { borderBottomColor: this.context.dividerColor }]} />;
-  }
+export default function OptionDivider(props: {||}): Node {
+  const themeContext = useContext(ThemeContext);
+  return (
+    <View style={[componentStyles.divider, { borderBottomColor: themeContext.dividerColor }]} />
+  );
 }

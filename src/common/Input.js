@@ -1,11 +1,11 @@
 /* @flow strict-local */
-import React, { PureComponent } from 'react';
+import React, { useState, useCallback, useContext } from 'react';
+import type { Node } from 'react';
 import { TextInput, Platform } from 'react-native';
 
-import type { LocalizableText, GetText } from '../types';
-import type { ThemeData } from '../styles';
-import { ThemeContext, HALF_COLOR, BORDER_COLOR } from '../styles';
-import { withGetText } from '../boot/TranslationProvider';
+import type { LocalizableText } from '../types';
+import { createStyleSheet, ThemeContext, HALF_COLOR, BORDER_COLOR } from '../styles';
+import { TranslationContext } from '../boot/TranslationProvider';
 
 export type Props = $ReadOnly<{|
   ...React$ElementConfig<typeof TextInput>,
@@ -17,13 +17,20 @@ export type Props = $ReadOnly<{|
   // would make `.current` be `any(implicit)`, which we don't want;
   // this is probably down to bugs in Flow's special support for React.
   textInputRef?: React$Ref<$FlowFixMe>,
-
-  _: GetText,
 |}>;
 
-type State = {|
-  isFocused: boolean,
-|};
+const componentStyles = createStyleSheet({
+  input: {
+    ...Platform.select({
+      ios: {
+        borderWidth: 1,
+        borderColor: BORDER_COLOR,
+        borderRadius: 2,
+        padding: 8,
+      },
+    }),
+  },
+});
 
 /**
  * A light abstraction over the standard TextInput component
@@ -39,60 +46,37 @@ type State = {|
  * @prop ...all other TextInput props - Passed through verbatim to TextInput.
  *   See upstream: https://reactnative.dev/docs/textinput
  */
-class Input extends PureComponent<Props, State> {
-  static contextType = ThemeContext;
-  context: ThemeData;
+export default function Input(props: Props): Node {
+  const { style, placeholder, textInputRef, ...restProps } = props;
 
-  styles = {
-    input: {
-      ...Platform.select({
-        ios: {
-          borderWidth: 1,
-          borderColor: BORDER_COLOR,
-          borderRadius: 2,
-          padding: 8,
-        },
-      }),
-    },
-  };
+  const [isFocused, setIsFocused] = useState<boolean>(false);
 
-  state = {
-    isFocused: false,
-  };
+  const handleFocus = useCallback(() => {
+    setIsFocused(true);
+  }, []);
 
-  handleFocus = () => {
-    this.setState({
-      isFocused: true,
-    });
-  };
+  const handleBlur = useCallback(() => {
+    setIsFocused(false);
+  }, []);
 
-  handleBlur = () => {
-    this.setState({
-      isFocused: false,
-    });
-  };
+  const themeContext = useContext(ThemeContext);
+  const _ = useContext(TranslationContext);
 
-  render() {
-    const { style, placeholder, textInputRef, _, ...restProps } = this.props;
-    const { isFocused } = this.state;
-    const fullPlaceholder =
-      typeof placeholder === 'object' /* force linebreak */
-        ? placeholder
-        : { text: placeholder, values: undefined };
+  const fullPlaceholder =
+    typeof placeholder === 'object' /* force linebreak */
+      ? placeholder
+      : { text: placeholder, values: undefined };
 
-    return (
-      <TextInput
-        style={[this.styles.input, { color: this.context.color }, style]}
-        placeholder={_(fullPlaceholder.text, fullPlaceholder.values)}
-        placeholderTextColor={HALF_COLOR}
-        underlineColorAndroid={isFocused ? BORDER_COLOR : HALF_COLOR}
-        onFocus={this.handleFocus}
-        onBlur={this.handleBlur}
-        ref={textInputRef}
-        {...restProps}
-      />
-    );
-  }
+  return (
+    <TextInput
+      style={[componentStyles.input, { color: themeContext.color }, style]}
+      placeholder={_(fullPlaceholder.text, fullPlaceholder.values)}
+      placeholderTextColor={HALF_COLOR}
+      underlineColorAndroid={isFocused ? BORDER_COLOR : HALF_COLOR}
+      onFocus={handleFocus}
+      onBlur={handleBlur}
+      ref={textInputRef}
+      {...restProps}
+    />
+  );
 }
-
-export default withGetText(Input);

@@ -32,9 +32,9 @@ export default (state: PresenceState = initialState, action: Action): PresenceSt
 
     case EVENT_PRESENCE: {
       // A presence event should have either "active" or "idle" status
-      const isPresenceEventValid = !!objectEntries(action.presence).find(
-        ([device, devicePresence]) => ['active', 'idle'].includes(devicePresence.status),
-      );
+      const isPresenceEventValid = !!objectEntries(
+        action.presence,
+      ).find(([device, devicePresence]) => ['active', 'idle'].includes(devicePresence.status));
       if (!isPresenceEventValid) {
         return state;
       }
@@ -43,13 +43,13 @@ export default (state: PresenceState = initialState, action: Action): PresenceSt
         ...state,
         // Flow bug (unresolved):
         // https://github.com/facebook/flow/issues/8276
-        // $FlowIssue #8276
+        // $FlowIssue[cannot-spread-indexer] #8276
         [action.email]: {
           ...state[action.email],
           ...action.presence,
           // Flow bug (unresolved):
           // https://github.com/facebook/flow/issues/8276
-          // $FlowIssue #8276
+          // $FlowIssue[cannot-spread-indexer] #8276
           aggregated: getAggregatedPresence({
             ...state[action.email],
             ...action.presence,

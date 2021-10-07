@@ -2,11 +2,7 @@
 import deepFreeze from 'deep-freeze';
 
 import unreadHuddlesReducer from '../unreadHuddlesReducer';
-import {
-  ACCOUNT_SWITCH,
-  EVENT_NEW_MESSAGE,
-  EVENT_UPDATE_MESSAGE_FLAGS,
-} from '../../actionConstants';
+import { ACCOUNT_SWITCH, EVENT_UPDATE_MESSAGE_FLAGS } from '../../actionConstants';
 import { NULL_ARRAY } from '../../nullObjects';
 import * as eg from '../../__tests__/lib/exampleData';
 import { makeUserId } from '../../api/idTypes';
@@ -87,11 +83,7 @@ describe('unreadHuddlesReducer', () => {
         },
       ]);
 
-      const action = deepFreeze({
-        type: EVENT_NEW_MESSAGE,
-        ...eg.eventNewMessageActionBase,
-        message: message2,
-      });
+      const action = eg.mkActionEventNewMessage(message2);
 
       const actualState = unreadHuddlesReducer(initialState, action);
 
@@ -107,18 +99,14 @@ describe('unreadHuddlesReducer', () => {
         },
       ]);
 
-      const action = deepFreeze({
-        type: EVENT_NEW_MESSAGE,
-        ...eg.eventNewMessageActionBase,
-        message: streamMessage,
-      });
+      const action = eg.mkActionEventNewMessage(streamMessage);
 
       const actualState = unreadHuddlesReducer(initialState, action);
 
       expect(actualState).toBe(initialState);
     });
 
-    test('if message is sent by self, do not mutate state', () => {
+    test('if message has "read" flag, do not mutate state', () => {
       const selfUser = { ...eg.selfUser, user_id: makeUserId(1) };
       const user2 = { ...eg.otherUser, user_id: makeUserId(2) };
       const user3 = { ...eg.thirdUser, user_id: makeUserId(3) };
@@ -126,16 +114,12 @@ describe('unreadHuddlesReducer', () => {
       const initialState = deepFreeze([]);
 
       const message2 = eg.pmMessage({
-        sender: selfUser,
+        sender: user2,
         recipients: [selfUser, user2, user3],
+        flags: ['read'],
       });
 
-      const action = deepFreeze({
-        type: EVENT_NEW_MESSAGE,
-        ...eg.eventNewMessageActionBase,
-        message: message2,
-        ownUserId: selfUser.user_id,
-      });
+      const action = eg.mkActionEventNewMessage(message2, { ownUserId: selfUser.user_id });
 
       const actualState = unreadHuddlesReducer(initialState, action);
 
@@ -156,11 +140,7 @@ describe('unreadHuddlesReducer', () => {
         },
       ]);
 
-      const action = deepFreeze({
-        type: EVENT_NEW_MESSAGE,
-        ...eg.eventNewMessageActionBase,
-        message: message4,
-      });
+      const action = eg.mkActionEventNewMessage(message4);
 
       const expectedState = [
         {
@@ -187,11 +167,7 @@ describe('unreadHuddlesReducer', () => {
         },
       ]);
 
-      const action = deepFreeze({
-        type: EVENT_NEW_MESSAGE,
-        ...eg.eventNewMessageActionBase,
-        message: message4,
-      });
+      const action = eg.mkActionEventNewMessage(message4);
 
       const expectedState = [
         {
@@ -221,7 +197,7 @@ describe('unreadHuddlesReducer', () => {
         allMessages: eg.makeMessagesState([]),
         messages: [1, 2, 3],
         flag: 'star',
-        operation: 'add',
+        op: 'add',
       };
 
       const actualState = unreadHuddlesReducer(initialState, action);
@@ -248,7 +224,7 @@ describe('unreadHuddlesReducer', () => {
         allMessages: eg.makeMessagesState([]),
         messages: [6, 7],
         flag: 'read',
-        operation: 'add',
+        op: 'add',
       });
 
       const actualState = unreadHuddlesReducer(initialState, action);
@@ -275,7 +251,7 @@ describe('unreadHuddlesReducer', () => {
         allMessages: eg.makeMessagesState([]),
         messages: [3, 4, 5, 6],
         flag: 'read',
-        operation: 'add',
+        op: 'add',
       });
 
       const expectedState = [
@@ -305,7 +281,7 @@ describe('unreadHuddlesReducer', () => {
         allMessages: eg.makeMessagesState([]),
         messages: [1, 2],
         flag: 'read',
-        operation: 'remove',
+        op: 'remove',
       });
 
       const actualState = unreadHuddlesReducer(initialState, action);
@@ -328,7 +304,7 @@ describe('unreadHuddlesReducer', () => {
         allMessages: eg.makeMessagesState([]),
         messages: [],
         flag: 'read',
-        operation: 'add',
+        op: 'add',
       });
 
       const actualState = unreadHuddlesReducer(initialState, action);

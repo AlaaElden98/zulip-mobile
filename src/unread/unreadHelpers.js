@@ -1,10 +1,13 @@
 /* @flow strict-local */
-import type { HuddlesUnreadItem, PmsUnreadItem, StreamUnreadItem, UserId } from '../types';
+import type { HuddlesUnreadItem, PmsUnreadItem, UserId } from '../types';
 import { addItemsToArray, removeItemsFromArray, filterArray } from '../utils/immutability';
 
-type SomeUnreadItem = { unread_message_ids: number[], ... };
+type SomeUnreadItem = $ReadOnly<{ unread_message_ids: $ReadOnlyArray<number>, ... }>;
 
-export function removeItemsDeeply<T: SomeUnreadItem>(objArray: T[], messageIds: number[]): T[] {
+export function removeItemsDeeply<T: SomeUnreadItem>(
+  objArray: $ReadOnlyArray<T>,
+  messageIds: number[],
+): $ReadOnlyArray<T> {
   let changed = false;
   const objWithAddedUnreadIds = objArray.map(obj => {
     const filteredIds = removeItemsFromArray(obj.unread_message_ids, messageIds);
@@ -29,7 +32,11 @@ export function removeItemsDeeply<T: SomeUnreadItem>(objArray: T[], messageIds: 
   );
 }
 
-function addItemsDeeply<T: SomeUnreadItem>(input: T[], itemsToAdd: number[], index: number): T[] {
+function addItemsDeeply<T: SomeUnreadItem>(
+  input: $ReadOnlyArray<T>,
+  itemsToAdd: number[],
+  index: number,
+): $ReadOnlyArray<T> {
   const item = input[index];
 
   const unreadMessageIds = addItemsToArray(item.unread_message_ids, itemsToAdd);
@@ -48,10 +55,10 @@ function addItemsDeeply<T: SomeUnreadItem>(input: T[], itemsToAdd: number[], ind
 }
 
 export const addItemsToPmArray = (
-  input: PmsUnreadItem[],
+  input: $ReadOnlyArray<PmsUnreadItem>,
   itemsToAdd: number[],
   senderId: UserId,
-): PmsUnreadItem[] => {
+): $ReadOnlyArray<PmsUnreadItem> => {
   const index = input.findIndex(sender => sender.sender_id === senderId);
 
   if (index !== -1) {
@@ -68,10 +75,10 @@ export const addItemsToPmArray = (
 };
 
 export const addItemsToHuddleArray = (
-  input: HuddlesUnreadItem[],
+  input: $ReadOnlyArray<HuddlesUnreadItem>,
   itemsToAdd: number[],
   userIds: string,
-): HuddlesUnreadItem[] => {
+): $ReadOnlyArray<HuddlesUnreadItem> => {
   const index = input.findIndex(recipients => recipients.user_ids_string === userIds);
 
   if (index !== -1) {
@@ -82,27 +89,6 @@ export const addItemsToHuddleArray = (
     ...input,
     {
       user_ids_string: userIds,
-      unread_message_ids: itemsToAdd,
-    },
-  ];
-};
-
-export const addItemsToStreamArray = (
-  input: StreamUnreadItem[],
-  itemsToAdd: number[],
-  streamId: number,
-  topic: string,
-): StreamUnreadItem[] => {
-  const index = input.findIndex(s => s.stream_id === streamId && s.topic === topic);
-
-  if (index !== -1) {
-    return addItemsDeeply(input, itemsToAdd, index);
-  }
-  return [
-    ...input,
-    {
-      stream_id: streamId,
-      topic,
       unread_message_ids: itemsToAdd,
     },
   ];

@@ -1,8 +1,12 @@
+/* @flow strict-local */
+/* eslint-disable global-require */
 import * as ReactNative from 'react-native';
 import { polyfillGlobal } from 'react-native/Libraries/Utilities/PolyfillFunctions';
 import { URL, URLSearchParams } from 'react-native-url-polyfill';
+// $FlowIgnore[untyped-import] - this is not anywhere near critical
+import mockAsyncStorage from '@react-native-async-storage/async-storage/jest/async-storage-mock';
 
-import mockAsyncStorage from '@react-native-community/async-storage/jest/async-storage-mock';
+import { assertUsingModernFakeTimers } from '../src/__tests__/lib/fakeTimers';
 
 // Use the same `URL` polyfill we do in the app.
 //
@@ -16,6 +20,9 @@ import mockAsyncStorage from '@react-native-community/async-storage/jest/async-s
 // imports eagerly so there's no dynamic `require`.
 polyfillGlobal('URL', () => URL);
 polyfillGlobal('URLSearchParams', () => URLSearchParams);
+
+// Default should be set with `timers: 'modern'` in Jest config.
+assertUsingModernFakeTimers();
 
 // Mock `react-native` ourselves, following upstream advice [1] [2].
 //
@@ -39,16 +46,24 @@ polyfillGlobal('URLSearchParams', () => URLSearchParams);
 // [1] https://github.com/facebook/react-native/issues/26579#issuecomment-535244001
 // [2] https://chat.zulip.org/#narrow/stream/243-mobile-team/topic/.23M3781.20RN.20v0.2E61.20upgrade/near/931219
 jest.mock('react-native', () => {
-  ReactNative.NativeModules.ZLPConstants =
-    // Currently only available on iOS. We don't bother
-    // conditionalizing on the platform here; if we want to mock
-    // Platform.OS, we'll likely want to do so per-test. In that
-    // scenario, we'll need to figure out how to recompute this mock
-    // with Platform.OS set as desired.
-    {
+  if (ReactNative.Platform.OS === 'ios') {
+    ReactNative.NativeModules.ZLPConstants = {
       resourceURL:
         'file:///private/var/containers/Bundle/Application/4DCD4D2B-F745-4C70-AD74-8E5F690CF593/ZulipMobile.app/',
     };
+  } else if (ReactNative.Platform.OS === 'android') {
+    const header = 'z|mock|';
+    ReactNative.NativeModules.TextCompressionModule = {
+      header,
+      compress: jest.fn(
+        async (input: string) => `${header}${Buffer.from(input).toString('base64')}`,
+      ),
+      decompress: jest.fn(async (input: string) =>
+        Buffer.from(input.replace(header, ''), 'base64').toString('utf8'),
+      ),
+    };
+  }
+
   return ReactNative;
 });
 
@@ -70,7 +85,8 @@ jest.mock('react-native', () => {
 
 // As instructed at https://reactnavigation.org/docs/testing/.
 jest.mock('react-native-reanimated', () => {
-  /* eslint-disable-next-line global-require */
+  /* $FlowIgnore[untyped-import] - This is just a mock setup file; no
+     need for a libdef. */
   const Reanimated = require('react-native-reanimated/mock');
 
   // The mock for `call` immediately calls the callback which is incorrect
@@ -80,10 +96,18 @@ jest.mock('react-native-reanimated', () => {
   return Reanimated;
 });
 
-jest.mock('@react-native-community/async-storage', () => mockAsyncStorage);
+jest.mock('@react-native-async-storage/async-storage', () => mockAsyncStorage);
 
-jest.mock('react-native-sound', () => () => ({
-  play: jest.fn(),
+// Without this, we get lots of these errors on importing the module:
+// `Invariant Violation: Native module cannot be null.`
+jest.mock('@react-native-community/push-notification-ios', () => ({
+  presentLocalNotification: jest.fn(),
+  scheduleLocalNotification: jest.fn(),
+  cancelAllLocalNotifications: jest.fn(),
+  removeAllDeliveredNotifications: jest.fn(),
+  getDeliveredNotifications: jest.fn(),
+  removeDeliveredNotifications: jest.fn(),
+  // etc. (incomplete)
 }));
 
 jest.mock('rn-fetch-blob', () => ({
@@ -130,5 +154,6 @@ jest.mock('../src/utils/logging', () => {
     __esModule: true, // eslint-disable-line id-match
     error: jest.fn().mockImplementation(logging.error),
     warn: jest.fn().mockImplementation(logging.warn),
+    info: jest.fn().mockImplementation(logging.info),
   };
 });

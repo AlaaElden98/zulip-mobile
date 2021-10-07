@@ -1,8 +1,9 @@
+import * as logging from '../../utils/logging';
+
 import { KEY_PREFIX } from './constants'
-import createAsyncLocalStorage from './defaults/asyncLocalStorage'
 
 export default function getStoredState (config, onComplete) {
-  let storage = config.storage || createAsyncLocalStorage('local')
+  let storage = config.storage
   let deserializer;
   if (config.deserialize === false) {
     deserializer = (data) => data
@@ -13,19 +14,24 @@ export default function getStoredState (config, onComplete) {
   }
   const blacklist = config.blacklist || []
   const whitelist = config.whitelist || false
-  const transforms = config.transforms || []
   const keyPrefix = config.keyPrefix !== undefined ? config.keyPrefix : KEY_PREFIX
 
-  // fallback getAllKeys to `keys` if present (LocalForage compatability)
-  if (storage.keys && !storage.getAllKeys) storage = {...storage, getAllKeys: storage.keys}
-
   let restoredState = {}
-  let completionCount = 0
+  let completionCount = 0;
 
-  storage.getAllKeys((err, allKeys) => {
+  (async () => {
+    let err = null;
+    let allKeys = undefined;
+    try {
+      allKeys = await storage.getAllKeys()
+    } catch (e) {
+      err = e
+    }
+
     if (err) {
-      if (process.env.NODE_ENV !== 'production') console.warn('redux-persist/getStoredState: Error in storage.getAllKeys')
+      logging.warn(err, { message: 'redux-persist/getStoredState: Error in storage.getAllKeys' })
       complete(err)
+      return
     }
 
     let persistKeys = allKeys.filter((key) => key.indexOf(keyPrefix) === 0).map((key) => key.slice(keyPrefix.length))
@@ -34,25 +40,30 @@ export default function getStoredState (config, onComplete) {
     let restoreCount = keysToRestore.length
     if (restoreCount === 0) complete(null, restoredState)
     keysToRestore.forEach((key) => {
-      storage.getItem(createStorageKey(key), (err, serialized) => {
-        if (err && process.env.NODE_ENV !== 'production') console.warn('redux-persist/getStoredState: Error restoring data for key:', key, err)
+      (async () => {
+        let err = null;
+        let serialized = null;
+        try {
+          serialized = await storage.getItem(createStorageKey(key))
+        } catch (e) {
+          err = e
+        }
+        if (err) logging.warn(err, { message: 'redux-persist/getStoredState: Error restoring data for a key.', key})
         else restoredState[key] = rehydrate(key, serialized)
         completionCount += 1
         if (completionCount === restoreCount) complete(null, restoredState)
-      })
+      })()
     })
-  })
+  })();
 
   function rehydrate (key, serialized) {
     let state = null
 
     try {
       let data = deserializer(serialized)
-      state = transforms.reduceRight((subState, transformer) => {
-        return transformer.out(subState, key)
-      }, data)
+      state = data
     } catch (err) {
-      if (process.env.NODE_ENV !== 'production') console.warn('redux-persist/getStoredState: Error restoring data for key:', key, err)
+      logging.warn(err, { message: 'redux-persist/getStoredState: Error restoring data for a key.', key })
     }
 
     return state

@@ -1,32 +1,29 @@
 /* @flow strict-local */
-import invariant from 'invariant';
+// $FlowFixMe[untyped-import]
 import isEqual from 'lodash.isequal';
 
 import { mapOrNull } from '../collections';
 import * as logging from './logging';
-import type { PmRecipientUser, Message, Outbox, UserId, UserOrBot } from '../types';
+import type {
+  PmRecipientUser,
+  Message,
+  StreamMessage,
+  PmMessage,
+  Outbox,
+  StreamOutbox,
+  PmOutbox,
+  UserId,
+  UserOrBot,
+} from '../types';
 
-/** The stream name a stream message was sent to.  Throws if a PM. */
-export const streamNameOfStreamMessage = (message: Message | Outbox): string => {
-  if (message.type !== 'stream') {
-    throw new Error('streamNameOfStreamMessage: got PM');
-  }
-  const { display_recipient: streamName } = message;
-  invariant(typeof streamName === 'string', 'message type / display_recipient mismatch');
-  return streamName;
-};
+/** The stream name a stream message was sent to. */
+export const streamNameOfStreamMessage = (message: StreamMessage | StreamOutbox): string =>
+  message.display_recipient;
 
-/** The recipients of a PM, in the form found on Message.  Throws if a stream message. */
+/** The recipients of a PM, in the form found on PmMessage. */
 export const recipientsOfPrivateMessage = (
-  message: Message | Outbox,
-): $ReadOnlyArray<PmRecipientUser> => {
-  if (message.type !== 'private') {
-    throw new Error('recipientsOfPrivateMessage: got stream message');
-  }
-  const { display_recipient: recipients } = message;
-  invariant(typeof recipients === 'object', 'message type / display_recipient mismatch');
-  return recipients;
-};
+  message: PmMessage | PmOutbox,
+): $ReadOnlyArray<PmRecipientUser> => message.display_recipient;
 
 /**
  * A list of users identifying a PM conversation, as per pmKeyRecipientsFromMessage.
@@ -102,17 +99,10 @@ const filterRecipientUsers = (
 const filterRecipientsAsUserIds = (
   recipients: $ReadOnlyArray<UserId>,
   ownUserId: UserId,
-): UserId[] =>
-  // prettier-ignore
+): $ReadOnlyArray<UserId> =>
   recipients.length === 1
-    // The spread is so that we always return a fresh array.  This allows
-    // us to take $ReadOnlyArray and return a plain array, so the caller
-    // can go on to sort the result.
-    ? [...recipients]
+    ? recipients
     : recipients.filter(r => r !== ownUserId).sort((a, b) => a - b);
-
-export const normalizeRecipientsAsUserIds = (recipients: UserId[]) =>
-  recipients.sort((a, b) => a - b).join(',');
 
 /**
  * The same list of users as pmKeyRecipientsFromMessage, in quirkier form.
@@ -124,7 +114,7 @@ export const normalizeRecipientsAsUserIds = (recipients: UserId[]) =>
 export const normalizeRecipientsAsUserIdsSansMe = (
   recipients: $ReadOnlyArray<UserId>,
   ownUserId: UserId,
-) => normalizeRecipientsAsUserIds(filterRecipientsAsUserIds(recipients, ownUserId));
+): string => filterRecipientsAsUserIds(recipients, ownUserId).join(',');
 
 /**
  * The set of users to show in the UI to identify a PM conversation.
@@ -135,14 +125,10 @@ export const normalizeRecipientsAsUserIdsSansMe = (
  *    data structures.
  */
 export const pmUiRecipientsFromMessage = (
-  message: Message | Outbox,
+  message: PmMessage | PmOutbox,
   ownUserId: UserId,
-): $ReadOnlyArray<PmRecipientUser> => {
-  if (message.type !== 'private') {
-    throw new Error('pmUiRecipientsFromMessage: expected PM, got stream message');
-  }
-  return filterRecipients(recipientsOfPrivateMessage(message), ownUserId);
-};
+): $ReadOnlyArray<PmRecipientUser> =>
+  filterRecipients(recipientsOfPrivateMessage(message), ownUserId);
 
 /**
  * The list of users to identify a PM conversation by in our data structures.
@@ -175,10 +161,9 @@ export const pmKeyRecipientsFromIds = (
  *  * The other `pmKeyRecipients…` functions in this module, which do the
  *    same computation but with different forms of input and output.
  *
- *  * `normalizeRecipientsAsUserIds`, `normalizeRecipientsAsUserIdsSansMe`,
- *    and `pmUnreadsKeyFromMessage`, which do the same job as this function
- *    with slight variations, and which we variously use in different places
- *    in the app.
+ *  * `normalizeRecipientsAsUserIdsSansMe` and `pmUnreadsKeyFromMessage`,
+ *    which do the same job as this function with slight variations, and
+ *    which we variously use in different places in the app.
  *
  *    It would be great to unify on a single version, as the variation is a
  *    possible source of bugs.
@@ -190,14 +175,13 @@ export const pmKeyRecipientsFromIds = (
 // But we also sort them ourselves, so as not to rely on that fact about
 // the server; it's easy enough to do.
 export const pmKeyRecipientsFromMessage = (
-  message: Message | Outbox,
+  message: PmMessage | PmOutbox,
   ownUserId: UserId,
-): PmKeyRecipients => {
-  if (message.type !== 'private') {
-    throw new Error('pmKeyRecipientsFromMessage: expected PM, got stream message');
-  }
-  return pmKeyRecipientsFromIds(recipientsOfPrivateMessage(message).map(r => r.id), ownUserId);
-};
+): PmKeyRecipients =>
+  pmKeyRecipientsFromIds(
+    recipientsOfPrivateMessage(message).map(r => r.id),
+    ownUserId,
+  );
 
 /**
  * The list of users to identify a PM conversation by in our data structures.
@@ -232,7 +216,7 @@ export const pmKeyRecipientUsersFromIds = (
  * Just like pmKeyRecipientsFromMessage, but in a slightly different format.
  */
 export const pmKeyRecipientUsersFromMessage = (
-  message: Message | Outbox,
+  message: PmMessage | PmOutbox,
   allUsersById: Map<UserId, UserOrBot>,
   ownUserId: UserId,
 ): PmKeyUsers | null => {
@@ -268,10 +252,7 @@ export const pmKeyRecipientsFromUsers = (
 // and just the other user ID for non-self 1:1s; and in each case the list
 // is sorted numerically and encoded in ASCII-decimal, comma-separated.
 // See the `unread_msgs` data structure in `src/api/initialDataTypes.js`.
-export const pmUnreadsKeyFromMessage = (message: Message, ownUserId?: UserId): string => {
-  if (message.type !== 'private') {
-    throw new Error('pmUnreadsKeyFromMessage: expected PM, got stream message');
-  }
+export const pmUnreadsKeyFromMessage = (message: PmMessage, ownUserId?: UserId): string => {
   const recipients = recipientsOfPrivateMessage(message);
 
   // This includes all users in the thread; see `Message#display_recipient`.
@@ -300,6 +281,9 @@ export const pmUnreadsKeyFromMessage = (message: Message, ownUserId?: UserId): s
  * give and which we use in most of our other data structures.
  */
 // See comment on pmUnreadsKeyFromMessage for details on this form.
+//
+// TODO: It'd be neat to have this consume PmKeyRecipients.  Needs having
+//   Narrow keep one of those around, and caseNarrow return it.
 export const pmUnreadsKeyFromPmKeyIds = (
   userIds: $ReadOnlyArray<UserId>,
   ownUserId: UserId,
@@ -327,9 +311,8 @@ export const pmUnreadsKeyFromPmKeyIds = (
 // That key string is: just the usual "PM key" list of users, stringified
 // and comma-separated.
 //
-// TODO: It'd be neat to have another opaque type like PmKeyIds, for this
-//   and pmUnreadsKeyFromPmKeyIds to consume.  Perhaps simplest to do after
-//   Narrow no longer contains emails.
+// TODO: It'd be neat to have this consume PmKeyRecipients.  Needs having
+//   Narrow keep one of those around, and caseNarrow return it.
 export const pmTypingKeyFromPmKeyIds = (userIds: $ReadOnlyArray<UserId>): string =>
   userIds.join(',');
 
@@ -353,19 +336,15 @@ export const pmTypingKeyFromRecipients = (
 ): string => pmTypingKeyFromPmKeyIds(filterRecipientsAsUserIds(recipients, ownUserId));
 
 export const isSameRecipient = (
-  message1: Message | Outbox | void,
-  message2: Message | Outbox | void,
+  message1: Message | Outbox,
+  message2: Message | Outbox,
 ): boolean => {
-  if (message1 === undefined || message2 === undefined) {
-    return false;
-  }
-
-  if (message1.type !== message2.type) {
-    return false;
-  }
-
   switch (message1.type) {
     case 'private':
+      if (message2.type !== 'private') {
+        return false;
+      }
+
       // We rely on the recipients being listed in a consistent order
       // between different messages in the same PM conversation.  The server
       // is indeed consistent to that degree; see comments on the Message
@@ -388,6 +367,10 @@ export const isSameRecipient = (
         recipientsOfPrivateMessage(message2).map(r => r.id),
       );
     case 'stream':
+      if (message2.type !== 'stream') {
+        return false;
+      }
+
       return (
         streamNameOfStreamMessage(message1).toLowerCase()
           === streamNameOfStreamMessage(message2).toLowerCase()

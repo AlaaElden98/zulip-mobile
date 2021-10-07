@@ -15,25 +15,45 @@
  * leaves out the secret API key; use `identityOfAuth` to extract one from
  * an `Auth`.
  */
-export type Auth = {|
+export type Auth = $ReadOnly<{|
   realm: URL,
   apiKey: string,
   email: string,
-|};
+|}>;
 
-export type ApiResponse = {|
-  result: string,
-  msg: string,
-|};
+/**
+ * The type shared by all Zulip API responses.
+ *
+ * See docs: https://zulip.com/api/rest-error-handling
+ *
+ * For more specific types, see:
+ *  * {@link ApiResponseSuccess}
+ *  * {@link ApiResponseErrorData}
+ */
+export type ApiResponse = $ReadOnly<{
+  +result: string,
+  +msg: string,
+  ...
+}>;
 
-export type ApiResponseSuccess = {|
-  result: 'success',
-  msg: '',
-|};
+/**
+ * The type shared by all non-error Zulip API responses.
+ *
+ * See docs: https://zulip.com/api/rest-error-handling
+ *
+ * See also:
+ *  * {@link ApiResponse}
+ *  * {@link ApiResponseErrorData}
+ */
+export type ApiResponseSuccess = $ReadOnly<{
+  +result: 'success',
+  +msg: '',
+  ...
+}>;
 
 /**
  * A list of current error codes can be found at:
- *   https://github.com/zulip/zulip/blob/master/zerver/lib/exceptions.py
+ *   https://github.com/zulip/zulip/blob/main/zerver/lib/exceptions.py
  *
  * Unfortunately, the `code` property is a relatively late addition to the
  * Zulip API, introduced for version 1.7.0. [1]  The modern default, when no
@@ -72,9 +92,9 @@ export type ApiErrorCode = string;
  *
  * This type is not exact: some error responses may contain additional data.
  */
-export type ApiResponseErrorData = {
-  code: ApiErrorCode,
-  msg: string,
-  result: 'error',
+export type ApiResponseErrorData = $ReadOnly<{
+  +code: ApiErrorCode,
+  +msg: string,
+  +result: 'error',
   ...
-};
+}>;

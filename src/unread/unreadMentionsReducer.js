@@ -1,4 +1,6 @@
 /* @flow strict-local */
+import invariant from 'invariant';
+
 import type { Action } from '../types';
 import type { UnreadMentionsState } from './unreadModelTypes';
 import {
@@ -23,9 +25,9 @@ const eventUpdateMessageFlags = (state, action) => {
     return initialState;
   }
 
-  if (action.operation === 'add') {
+  if (action.op === 'add') {
     return removeItemsFromArray(state, action.messages);
-  } else if (action.operation === 'remove') {
+  } else if (action.op === 'remove') {
     // we do not support that operation
   }
 
@@ -43,8 +45,9 @@ export default (state: UnreadMentionsState = initialState, action: Action): Unre
 
     case EVENT_NEW_MESSAGE: {
       const { flags } = action.message;
-      if (!flags) {
-        throw new Error('action.message.flags should be defined.');
+      invariant(flags, 'message in EVENT_NEW_MESSAGE must have flags');
+      if (flags.includes('read')) {
+        return state;
       }
       return (flags.includes('mentioned') || flags.includes('wildcard_mentioned'))
         && !state.includes(action.message.id)

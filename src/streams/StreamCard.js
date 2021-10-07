@@ -1,5 +1,6 @@
 /* @flow strict-local */
 import React, { PureComponent } from 'react';
+import type { Node } from 'react';
 import { View } from 'react-native';
 
 import type { Stream, Subscription } from '../types';
@@ -27,15 +28,12 @@ const componentStyles = createStyleSheet({
 
 type Props = $ReadOnly<{|
   stream: Stream,
-  subscription: Subscription,
+  subscription?: Subscription,
 |}>;
 
 export default class StreamCard extends PureComponent<Props> {
-  render() {
+  render(): Node {
     const { stream, subscription } = this.props;
-
-    const name = subscription.name || stream.name;
-    const description = subscription.description || stream.description;
 
     return (
       <View style={styles.padding}>
@@ -43,19 +41,19 @@ export default class StreamCard extends PureComponent<Props> {
           <StreamIcon
             style={componentStyles.streamIcon}
             size={22}
-            color={subscription.color || NULL_SUBSCRIPTION.color}
+            color={subscription?.color || NULL_SUBSCRIPTION.color}
             isMuted={subscription ? !subscription.in_home_view : false}
             isPrivate={stream && stream.invite_only}
           />
           <RawLabel
             style={componentStyles.streamText}
-            text={name}
+            text={stream.name}
             numberOfLines={1}
             ellipsizeMode="tail"
           />
         </View>
-        {description.length > 0 && (
-          <RawLabel style={componentStyles.descriptionText} text={description} />
+        {stream.description.length > 0 && (
+          <RawLabel style={componentStyles.descriptionText} text={stream.description} />
         )}
       </View>
     );

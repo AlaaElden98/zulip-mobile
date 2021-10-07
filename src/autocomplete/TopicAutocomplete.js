@@ -1,11 +1,12 @@
 /* @flow strict-local */
 
-import React, { PureComponent } from 'react';
+import React, { useEffect } from 'react';
+import type { Node } from 'react';
 import { FlatList } from 'react-native';
 
-import type { Dispatch, Narrow } from '../types';
+import type { Narrow } from '../types';
 import { createStyleSheet } from '../styles';
-import { connect } from '../react-redux';
+import { useDispatch, useSelector } from '../react-redux';
 import { getTopicsForNarrow } from '../selectors';
 import { Popup, RawLabel, Touchable } from '../common';
 import AnimatedScaleComponent from '../animation/AnimatedScaleComponent';
@@ -17,23 +18,19 @@ const styles = createStyleSheet({
   },
 });
 
-type SelectorProps = $ReadOnly<{|
-  topics: string[],
-|}>;
-
 type Props = $ReadOnly<{|
   narrow: Narrow,
   isFocused: boolean,
   text: string,
   onAutocomplete: (name: string) => void,
-
-  dispatch: Dispatch,
-  ...SelectorProps,
 |}>;
 
-class TopicAutocomplete extends PureComponent<Props> {
-  componentDidMount() {
-    const { dispatch, narrow } = this.props;
+export default function TopicAutocomplete(props: Props): Node {
+  const { narrow, isFocused, text, onAutocomplete } = props;
+  const dispatch = useDispatch();
+  const topics = useSelector(state => getTopicsForNarrow(state, narrow));
+
+  useEffect(() => {
     // The following should be sufficient to ensure we're up-to-date
     // with the complete list of topics at all times that we need to
     // be:
@@ -47,39 +44,32 @@ class TopicAutocomplete extends PureComponent<Props> {
     // The latter is already taken care of (see handling of
     // EVENT_NEW_MESSAGE in topicsReducer). So, do the former here.
     dispatch(fetchTopicsForStream(narrow));
+  }, [dispatch, narrow]);
+
+  if (!isFocused) {
+    return null;
   }
 
-  render() {
-    const { isFocused, topics, text, onAutocomplete } = this.props;
+  const topicsToSuggest = topics.filter(
+    x => x && x !== text && x.toLowerCase().indexOf(text.toLowerCase()) > -1,
+  );
 
-    if (!isFocused || text.length === 0) {
-      return null;
-    }
-
-    const topicsToSuggest = topics.filter(
-      x => x && x !== text && x.toLowerCase().indexOf(text.toLowerCase()) > -1,
-    );
-
-    return (
-      <AnimatedScaleComponent visible={topicsToSuggest.length > 0}>
-        <Popup>
-          <FlatList
-            keyboardShouldPersistTaps="always"
-            initialNumToRender={10}
-            data={topicsToSuggest}
-            keyExtractor={item => item}
-            renderItem={({ item }) => (
-              <Touchable onPress={() => onAutocomplete(item)}>
-                <RawLabel style={styles.topic} text={item} />
-              </Touchable>
-            )}
-          />
-        </Popup>
-      </AnimatedScaleComponent>
-    );
-  }
+  return (
+    <AnimatedScaleComponent visible={topicsToSuggest.length > 0}>
+      <Popup>
+        <FlatList
+          nestedScrollEnabled
+          keyboardShouldPersistTaps="always"
+          initialNumToRender={10}
+          data={topicsToSuggest}
+          keyExtractor={item => item}
+          renderItem={({ item }) => (
+            <Touchable onPress={() => onAutocomplete(item)}>
+              <RawLabel style={styles.topic} text={item} />
+            </Touchable>
+          )}
+        />
+      </Popup>
+    </AnimatedScaleComponent>
+  );
 }
-
-export default connect<SelectorProps, _, _>((state, props) => ({
-  topics: getTopicsForNarrow(state, props.narrow),
-}))(TopicAutocomplete);

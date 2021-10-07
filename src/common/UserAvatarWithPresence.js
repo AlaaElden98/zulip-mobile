@@ -1,5 +1,6 @@
 /* @flow strict-local */
 import React, { PureComponent } from 'react';
+import type { Node } from 'react';
 
 import type { UserId } from '../types';
 import { createStyleSheet } from '../styles';
@@ -22,6 +23,7 @@ type Props = $ReadOnly<{|
   size: number,
   onPress?: () => void,
   email: string,
+  isMuted?: boolean,
 |}>;
 
 /**
@@ -37,11 +39,11 @@ type Props = $ReadOnly<{|
  * @prop [onPress] - Event fired on pressing the component.
  */
 export default class UserAvatarWithPresence extends PureComponent<Props> {
-  render() {
-    const { avatarUrl, email, size, onPress } = this.props;
+  render(): Node {
+    const { avatarUrl, email, isMuted, size, onPress } = this.props;
 
     return (
-      <UserAvatar avatarUrl={avatarUrl} size={size} onPress={onPress}>
+      <UserAvatar avatarUrl={avatarUrl} size={size} isMuted={isMuted} onPress={onPress}>
         <PresenceStatusIndicator
           style={styles.status}
           email={email}
@@ -68,7 +70,7 @@ export function UserAvatarWithPresenceById(
     ...$Diff<Props, {| avatarUrl: mixed, email: mixed |}>,
     userId: UserId,
   |}>,
-) {
+): Node {
   const { userId, ...restProps } = props;
 
   const user = useSelector(state => tryGetUserForId(state, userId));

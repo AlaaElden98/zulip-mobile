@@ -38,6 +38,7 @@ describe('reducer', () => {
         { user_ids: [2, 1].map(makeUserId), max_message_id: 345 }, // user_ids out of order
       ];
       const expected = {
+        // prettier-ignore
         map: Immutable.Map([['', 234], ['1', 123], ['1,2', 345]]),
         sorted: Immutable.List(['1,2', '', '1']),
       };
@@ -62,6 +63,7 @@ describe('reducer', () => {
         action([msg(45, [user1]), msg(123, [user1, user2]), eg.streamMessage(), msg(234, [user1])]),
       );
       expect(state).toEqual({
+        // prettier-ignore
         map: Immutable.Map([['1', 234], ['1,2', 123]]),
         sorted: Immutable.List(['1', '1,2']),
       });
@@ -79,6 +81,7 @@ describe('reducer', () => {
         ]),
       );
       expect(state).toEqual({
+        // prettier-ignore
         map: Immutable.Map([['1', 234], ['1,2', 456], ['2', 345]]),
         sorted: Immutable.List(['1,2', '2', '1']),
       });
@@ -86,7 +89,7 @@ describe('reducer', () => {
   });
 
   describe('EVENT_NEW_MESSAGE', () => {
-    const actionGeneral = message => ({ ...eg.eventNewMessageActionBase, message });
+    const actionGeneral = eg.mkActionEventNewMessage;
     const [user1, user2] = [eg.makeUser({ user_id: 1 }), eg.makeUser({ user_id: 2 })];
     const action = (id, otherUsers) =>
       actionGeneral(eg.pmMessageFromTo(eg.selfUser, otherUsers, { id }));
@@ -103,6 +106,7 @@ describe('reducer', () => {
       // This is here mostly for checked documentation of what's in
       // baseState, to help in reading the other test cases.
       expect(baseState).toEqual({
+        // prettier-ignore
         map: Immutable.Map([['1', 234], ['1,2', 123]]),
         sorted: Immutable.List(['1', '1,2']),
       });
@@ -116,6 +120,7 @@ describe('reducer', () => {
     test('new conversation, newest message', () => {
       const state = reducer(baseState, action(345, [user2]));
       expect(state).toEqual({
+        // prettier-ignore
         map: Immutable.Map([['1', 234], ['1,2', 123], ['2', 345]]),
         sorted: Immutable.List(['2', '1', '1,2']),
       });
@@ -124,6 +129,7 @@ describe('reducer', () => {
     test('new conversation, not newest message', () => {
       const state = reducer(baseState, action(159, [user2]));
       expect(state).toEqual({
+        // prettier-ignore
         map: Immutable.Map([['1', 234], ['1,2', 123], ['2', 159]]),
         sorted: Immutable.List(['1', '2', '1,2']),
       });
@@ -132,6 +138,7 @@ describe('reducer', () => {
     test('existing conversation, newest message', () => {
       const state = reducer(baseState, action(345, [user1, user2]));
       expect(state).toEqual({
+        // prettier-ignore
         map: Immutable.Map([['1', 234], ['1,2', 345]]),
         sorted: Immutable.List(['1,2', '1']),
       });
@@ -140,6 +147,7 @@ describe('reducer', () => {
     test('existing newest conversation, newest message', () => {
       const state = reducer(baseState, action(345, [user1]));
       expect(state).toEqual({
+        // prettier-ignore
         map: Immutable.Map([['1', 345], ['1,2', 123]]),
         sorted: Immutable.List(['1', '1,2']),
       });

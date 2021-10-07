@@ -1,12 +1,13 @@
 /* @flow strict-local */
-import React, { PureComponent } from 'react';
-import { View } from 'react-native';
-import type { FlatList } from 'react-native';
+import React, { useState, useRef, useEffect } from 'react';
+import type { Node } from 'react';
+import { View, FlatList } from 'react-native';
 import { createSelector } from 'reselect';
 
-import type { User, UserId, UserOrBot, PresenceState, Selector, Dispatch } from '../types';
+import { usePrevious } from '../reactUtils';
+import type { User, UserId, UserOrBot, Selector } from '../types';
 import { createStyleSheet } from '../styles';
-import { connect } from '../react-redux';
+import { useSelector } from '../react-redux';
 import { FloatingActionButton, LineSeparator } from '../common';
 import { IconDone } from '../common/Icons';
 import UserList from '../users/UserList';
@@ -27,88 +28,9 @@ const styles = createStyleSheet({
 });
 
 type Props = $ReadOnly<{|
-  dispatch: Dispatch,
-  users: User[],
-  presences: PresenceState,
   filter: string,
   onComplete: (selected: UserOrBot[]) => void,
 |}>;
-
-type State = {|
-  selected: UserOrBot[],
-|};
-
-class UserPickerCard extends PureComponent<Props, State> {
-  state = {
-    selected: [],
-  };
-
-  listRef: ?FlatList<UserOrBot>;
-
-  handleUserPress = (user: UserOrBot) => {
-    this.setState(state => {
-      const { selected } = state;
-      if (selected.find(x => x.user_id === user.user_id)) {
-        return { selected: selected.filter(x => x.user_id !== user.user_id) };
-      } else {
-        return { selected: [...selected, user] };
-      }
-    });
-  };
-
-  handleUserDeselect = (userId: UserId) => {
-    this.setState(state => ({
-      selected: state.selected.filter(x => x.user_id !== userId),
-    }));
-  };
-
-  handleComplete = () => {
-    const { onComplete } = this.props;
-    const { selected } = this.state;
-    onComplete(selected);
-  };
-
-  componentDidUpdate = (prevProps: Props, prevState: State) => {
-    const list = this.listRef;
-    if (list && this.state.selected.length > prevState.selected.length) {
-      setTimeout(() => list.scrollToEnd());
-    }
-  };
-
-  render() {
-    const { filter, users, presences } = this.props;
-    const { selected } = this.state;
-    return (
-      <View style={styles.wrapper}>
-        <AnimatedScaleComponent visible={selected.length > 0}>
-          <AvatarList
-            listRef={component => {
-              this.listRef = component;
-            }}
-            users={selected}
-            onPress={this.handleUserDeselect}
-          />
-        </AnimatedScaleComponent>
-        {selected.length > 0 && <LineSeparator />}
-        <UserList
-          filter={filter}
-          users={users}
-          presences={presences}
-          selected={selected}
-          onPress={this.handleUserPress}
-        />
-        <AnimatedScaleComponent style={styles.button} visible={selected.length > 0}>
-          <FloatingActionButton
-            Icon={IconDone}
-            size={50}
-            disabled={selected.length === 0}
-            onPress={this.handleComplete}
-          />
-        </AnimatedScaleComponent>
-      </View>
-    );
-  }
-}
 
 // The users we want to show in this particular UI.
 // We exclude (a) users with `is_active` false; (b) cross-realm bots; (c) self.
@@ -118,7 +40,62 @@ const getUsersToShow: Selector<User[]> = createSelector(
   (users, ownUserId) => users.filter(user => user.user_id !== ownUserId),
 );
 
-export default connect(state => ({
-  users: getUsersToShow(state),
-  presences: getPresence(state),
-}))(UserPickerCard);
+export default function UserPickerCard(props: Props): Node {
+  const { filter } = props;
+
+  const users = useSelector(getUsersToShow);
+  const presences = useSelector(getPresence);
+
+  const [selectedState, setSelectedState] = useState<UserOrBot[]>([]);
+  const listRef = useRef<FlatList<UserOrBot> | null>(null);
+
+  const prevSelectedState = usePrevious(selectedState);
+  useEffect(() => {
+    if (prevSelectedState && selectedState.length > prevSelectedState.length) {
+      setTimeout(() => {
+        listRef.current?.scrollToEnd();
+      });
+    }
+  }, [selectedState, prevSelectedState, listRef]);
+
+  return (
+    <View style={styles.wrapper}>
+      <AnimatedScaleComponent visible={selectedState.length > 0}>
+        <AvatarList
+          listRef={listRef}
+          users={selectedState}
+          onPress={(userId: UserId) => {
+            setSelectedState(state => state.filter(x => x.user_id !== userId));
+          }}
+        />
+      </AnimatedScaleComponent>
+      {selectedState.length > 0 && <LineSeparator />}
+      <UserList
+        filter={filter}
+        users={users}
+        presences={presences}
+        selected={selectedState}
+        onPress={(user: UserOrBot) => {
+          setSelectedState(state => {
+            if (state.find(x => x.user_id === user.user_id)) {
+              return state.filter(x => x.user_id !== user.user_id);
+            } else {
+              return [...state, user];
+            }
+          });
+        }}
+      />
+      <AnimatedScaleComponent style={styles.button} visible={selectedState.length > 0}>
+        <FloatingActionButton
+          Icon={IconDone}
+          size={50}
+          disabled={selectedState.length === 0}
+          onPress={() => {
+            const { onComplete } = props;
+            onComplete(selectedState);
+          }}
+        />
+      </AnimatedScaleComponent>
+    </View>
+  );
+}

@@ -4,9 +4,9 @@ import type { Stream } from '../apiTypes';
 import { apiGet } from '../apiFetch';
 
 type ApiResponseStreams = {|
-  ...ApiResponseSuccess,
+  ...$Exact<ApiResponseSuccess>,
   streams: Stream[],
 |};
 
-/** See https://zulip.com/api/get-all-streams */
+/** See https://zulip.com/api/get-streams */
 export default async (auth: Auth): Promise<ApiResponseStreams> => apiGet(auth, 'streams');

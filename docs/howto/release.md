@@ -80,7 +80,11 @@ simple terminology for the process we follow with both.
     our translation contributors.  See
     [howto/translations.md](translations.md) for background.
 
-* Check that tests pass: `tools/test --full`.
+  * Skip this step if making a release that isn't atop the latest
+    development version, i.e. a "cherry-pick release" or "stable release".
+    We sync with Transifex only from the latest development version.
+
+* Check that tests pass: `tools/test --all`.
 
 * Run `tools/bump-version` to update the version number in the
   Android and iOS build metadata.
@@ -96,6 +100,13 @@ simple terminology for the process we follow with both.
 
   ```
   tools/checkout-keystore
+  ```
+
+* Apply the Sentry client key (using the local branch created for this
+  in initial setup):
+
+  ```
+  git rebase @ release-secrets
   ```
 
 * Build the app, as both a good old-fashioned APK and a fancy new AAB:
@@ -139,6 +150,12 @@ simple terminology for the process we follow with both.
   navigate to the Zulip screen in the Play Store app, and it should
   already show an "Update" button.
 
+* Remember to switch back to a branch without the Sentry client key:
+
+  ```
+  git checkout main
+  ```
+
 [play-internal-testing]: https://play.google.com/console/developers/8060868091387311598/app/4976350040864490411/tracks/internal-testing
 [play-internal-app-sharing]: https://play.google.com/console/internal-app-sharing
 
@@ -154,6 +171,13 @@ simple terminology for the process we follow with both.
 
   (A nice improvement would be to script that -- probably folded into
   `tools/ios build`.)
+
+* Apply the Sentry client key (using the local branch created for this
+  in initial setup):
+
+  ```
+  git rebase @ release-secrets
+  ```
 
 * Build using our `tools/ios` script:
 
@@ -209,6 +233,12 @@ simple terminology for the process we follow with both.
   * Processing takes a few minutes, and we get an email from Apple
     when it's complete.  At this point, the new build automatically becomes
     available in alpha.
+
+* Remember to switch back to a branch without the Sentry client key:
+
+  ```
+  git checkout main
+  ```
 
 [app-store-connect]: https://appstoreconnect.apple.com/
 [asc-builds]: https://appstoreconnect.apple.com/apps/1203036395/recent/activity/ios/builds?m=
@@ -333,14 +363,14 @@ simple terminology for the process we follow with both.
 
 * Announce on chat.zulip.org:
 
-  * Announce the new beta release [in `#mobile > release`][] on czo.
+  * Announce the new beta release [in `#announce > mobile releases`][] on czo.
 
   * Use `tools/changelog czo` for the release notes, editing
     formatting as needed.  Note that the tool rewrites issue/PR
     references like `#1234` to `#M1234` instead, so that they get
     linkified correctly.
 
-[in `#mobile > release`]: https://chat.zulip.org/#narrow/stream/48-mobile/topic/release
+[in `#announce > mobile releases`]: https://chat.zulip.org/#narrow/stream/1-announce/topic/mobile.20releases
 
 
 ### Release to production
@@ -436,7 +466,7 @@ vulnerable.
 * Wait for the release to be approved for TestFlight.  (On failure, try to
   fix, then resubmit.)
 
-* Push the tagged commit, and also push the corresponding changes to master.
+* Push the tagged commit, and also push the corresponding changes to main.
 
 * Upload the APK to GitHub as usual.
 
@@ -447,10 +477,82 @@ vulnerable.
 
 ### Configure Sentry error reporting
 
-* Add Sentry API key and account: file `sentry.properties` change `auth.token`
+#### Sentry token for uploading a release and sourcemap
 
-* Set client key (DSN): file `config.js` set `sentryKey` value
+1. Visit https://sentry.io/settings/account/api/auth-tokens/ , and
+   create a new auth token.  Give it the `project:releases` scope, and
+   no others.
 
+2. Create a file like this:
+
+   ```
+   defaults.url=https://sentry.io/
+   defaults.org=zulip
+   defaults.project=zulip-mobile
+   auth.token=01234567...YOUR-TOKEN-HERE...89abcdef
+   cli.executable=node_modules/@sentry/cli/bin/sentry-cli
+   ```
+
+   with your new auth token in the `auth.token=` line, and place
+   copies at both `android/sentry.properties` and
+   `ios/sentry.properties`.
+
+When preparing a release for publication, these files will be used for
+uploading to Sentry the sourcemap for the release, so that it can
+unminify the stack traces and add source-code snippets.
+
+(Our routine builds don't do this, regardless of debug or release
+mode; it's enabled by the `tools/android` and `tools/ios` scripts we
+use for preparing releases for publication.  They do this via setting
+the `-Psentry` Gradle property and the `USE_SENTRY` Xcode variable
+respectively, and those cause our build process to invoke a build-time
+script Sentry supplies.)
+
+
+#### Sentry client key
+
+1. Visit https://sentry.io/settings/zulip/projects/zulip-mobile/keys/
+   and get the Sentry "client key" there, specifically in the format
+   Sentry calls a "DSN".
+
+2. Edit `src/sentryConfig.js` and save that string as the value of
+   `sentryKey`.  See the jsdoc and comment there for more about this
+   value.
+
+   Edit `android/app/src/main/AndroidManifest.xml` similarly,
+   following the comment around `io.sentry.dsn`.
+
+   You won't want to push that change, or to make builds with it
+   except when you're making a release build you intend to publish.
+   But you will want to have it handy to apply whenever you are making
+   a release build for publication.  So:
+
+3. Save this value in the form of a local Git branch you don't push,
+   using commands like:
+
+   ```
+   $ git checkout -b release-secrets
+   $ git commit -am 'SECRET: Add Sentry client key.'
+   $ git checkout main
+   ```
+
+   Then, as described in the main release steps above, when making a
+   build for publication you'll rebase or cherry-pick that
+   `release-secrets` commit temporarily before building.
+
+(Yes, this is kind of a hacky way to do this.  Eliminating that
+cherry-pick step at build time would be quite nice.  The key criteria
+this meets that an improved solution should also meet are: (a) the key
+shouldn't be in the public source tree, so it should live locally on
+each release manager's machine; (b) Sentry should only be enabled in
+builds explicitly meant for publication, and not in other builds a
+release manager happens to make, including builds in release mode.)
+
+
+### Set up Transifex.
+
+Install Transifex's CLI client, `tx`, using our instructions at
+[howto/translations.md](translations.md#setup).
 
 ### Prepare Android
 

@@ -58,7 +58,7 @@ This looks something like:
 ```
 $ cd ~/z/zulip  # your zulip.git clone, wherever it is
 $ cd static/shared  # the root of the @zulip/shared package's source
-$ git checkout master
+$ git checkout main
 $ git pull --ff-only
 
    # (These steps can probably become a `version` NPM script.)
@@ -67,8 +67,8 @@ $ npm version patch --no-git-tag-version
 $ git commit -am 'shared: Bump version to 0.0.3.'
 $ git tag shared-0.0.3
 
-$ git log --stat -p upstream/master..  # check your work!
-$ git push upstream master shared-0.0.3
+$ git log --stat -p upstream/main..  # check your work!
+$ git push upstream main shared-0.0.3
 
 $ npm publish --dry-run  # check your work!
 $ npm publish  # should prompt for an OTP, from your 2FA setup
@@ -100,3 +100,7 @@ you [here][npm-zulip-team] for access to everything in `@zulip`, and
 
 [npm-zulip-team]: https://www.npmjs.com/settings/zulip/teams/team/developers/users
 [npm-zulip-md-p-access]: https://www.npmjs.com/package/zulip-markdown-parser/access
+
+You'll also need to run `npm adduser` on your development machine and
+follow the prompts to authenticate.  This will create a `~/.npmrc`
+file with an auth token, which `npm publish` will automatically use.

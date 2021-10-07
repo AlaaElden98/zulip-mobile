@@ -1,14 +1,14 @@
 /* @flow strict-local */
 import React, { useContext } from 'react';
-import { Platform, View } from 'react-native';
+import type { Node } from 'react';
+import { Platform } from 'react-native';
 import {
   createBottomTabNavigator,
   type BottomTabNavigationProp,
 } from '@react-navigation/bottom-tabs';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { RouteProp, RouteParamsOf } from '../react-navigation';
-import type { Dispatch } from '../types';
 import type { AppNavigationProp } from '../nav/AppNavigator';
 import type { GlobalParamList } from '../nav/globalTypes';
 import { bottomTabNavigatorConfig } from '../styles/tabs';
@@ -17,13 +17,10 @@ import StreamTabsScreen from './StreamTabsScreen';
 import PmConversationsScreen from '../pm-conversations/PmConversationsScreen';
 import SettingsScreen from '../settings/SettingsScreen';
 import { IconInbox, IconSettings, IconStream } from '../common/Icons';
-import { OwnAvatar, OfflineNotice, ZulipStatusBar } from '../common';
+import { OwnAvatar, OfflineNotice } from '../common';
 import IconUnreadConversations from '../nav/IconUnreadConversations';
 import ProfileScreen from '../account-info/ProfileScreen';
-import { connect } from '../react-redux';
-import { getHaveServerData } from '../selectors';
 import styles, { ThemeContext } from '../styles';
-import FullScreenLoading from '../common/FullScreenLoading';
 
 export type MainTabsNavigatorParamList = {|
   home: RouteParamsOf<typeof HomeScreen>,
@@ -43,45 +40,28 @@ const Tab = createBottomTabNavigator<
   MainTabsNavigationProp<>,
 >();
 
-type SelectorProps = $ReadOnly<{|
-  haveServerData: boolean,
-|}>;
-
 type Props = $ReadOnly<{|
   navigation: AppNavigationProp<'main-tabs'>,
   route: RouteProp<'main-tabs', void>,
-
-  dispatch: Dispatch,
-  ...SelectorProps,
 |}>;
 
-function MainTabsScreen(props: Props) {
+export default function MainTabsScreen(props: Props): Node {
   const { backgroundColor } = useContext(ThemeContext);
-  const { haveServerData } = props;
-
-  const insets = useSafeAreaInsets();
-
-  if (!haveServerData) {
-    // Show a full-screen loading indicator while waiting for the
-    // initial fetch to complete, if we don't have potentially stale
-    // data to show instead. Also show it for the duration of the nav
-    // transition just after the user logs out (see our #4275).
-    //
-    // And avoid rendering any of our main UI, to maintain the
-    // guarantee that it can all rely on server data existing.
-    return <FullScreenLoading />;
-  }
 
   return (
-    <View style={[styles.flexed, { backgroundColor }]}>
-      <View style={{ height: insets.top }} />
-      <ZulipStatusBar />
+    <SafeAreaView mode="padding" edges={['top']} style={[styles.flexed, { backgroundColor }]}>
       <OfflineNotice />
       <Tab.Navigator
         {...bottomTabNavigatorConfig({
-          showLabel: !!Platform.isPad,
+          // TODO: Find a way to tell if we're on an Android tablet,
+          // and use that -- we don't want to assume Android users
+          // aren't on tablets, but `isPad` is iOS only and `Platform`
+          // doesn't have something else for Android (yet):
+          // https://reactnative.dev/docs/platform#ispad-ios
+          showLabel: Platform.OS === 'ios' && Platform.isPad,
           showIcon: true,
         })}
+        lazy={false}
         backBehavior="none"
       >
         <Tab.Screen
@@ -125,25 +105,6 @@ function MainTabsScreen(props: Props) {
           }}
         />
       </Tab.Navigator>
-    </View>
+    </SafeAreaView>
   );
 }
-
-// `connect` does something useful for us that `useSelector` doesn't
-// do: it interposes a new `ReactReduxContext.Provider` component,
-// which proxies subscriptions so that the descendant components only
-// rerender if this one continues to say their subtree should be kept
-// around. See
-//   https://github.com/zulip/zulip-mobile/pull/4454#discussion_r578140524
-// and some discussion around
-//   https://chat.zulip.org/#narrow/stream/243-mobile-team/topic/converting.20to.20Hooks/near/1111970
-// where we describe some limits of our understanding.
-//
-// We found these things out while investigating an annoying crash: we
-// found that `mapStateToProps` on a descendant of `MainTabsScreen`
-// was running -- and throwing an uncaught error -- on logout, and
-// `MainTabsScreen`'s early return on `!haveServerData` wasn't
-// preventing that from happening.
-export default connect(state => ({
-  haveServerData: getHaveServerData(state),
-}))(MainTabsScreen);

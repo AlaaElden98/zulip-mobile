@@ -1,5 +1,5 @@
 /* @flow strict-local */
-import type { Debug, Orientation, Action } from '../types';
+import type { GlobalState, Debug, Orientation, Action } from '../types';
 import {
   REHYDRATE,
   DEAD_QUEUE,
@@ -8,22 +8,24 @@ import {
   ACCOUNT_SWITCH,
   REALM_INIT,
   INITIAL_FETCH_COMPLETE,
+  INITIAL_FETCH_ABORT,
   INITIAL_FETCH_START,
   APP_ORIENTATION,
   TOGGLE_OUTBOX_SENDING,
   DEBUG_FLAG_TOGGLE,
   GOT_PUSH_TOKEN,
   LOGOUT,
+  DISMISS_SERVER_COMPAT_NOTICE,
 } from '../actionConstants';
-import { hasAuth } from '../account/accountsSelectors';
+import { getHasAuth } from '../account/accountsSelectors';
 
 /**
- * Miscellaneous non-persistent state about this run of the app.
+ * Miscellaneous non-persistent state specific to a particular account.
+ *
+ * See {@link SessionState} for discussion of what "non-persistent" means.
  */
-export type SessionState = {|
-  eventQueueId: number,
-  isOnline: boolean,
-  isHydrated: boolean,
+export type PerAccountSessionState = $ReadOnly<{
+  eventQueueId: string | null,
 
   /**
    * Whether the /register request is in progress.
@@ -34,8 +36,40 @@ export type SessionState = {|
   loading: boolean,
 
   needsInitialFetch: boolean,
-  orientation: Orientation,
+
   outboxSending: boolean,
+
+  /**
+   * Whether `ServerCompatNotice` (which we'll add soon) has been
+   *   dismissed this session.
+   *
+   * We put this in the per-session state deliberately, so that users
+   * see the notice on every startup until the server is upgraded.
+   * That's a better experience than not being able to load the realm
+   * on mobile at all, which is what will happen soon if the user
+   * doesn't act on the notice.
+   */
+  hasDismissedServerCompatNotice: boolean,
+
+  ...
+}>;
+
+/**
+ * Miscellaneous non-persistent state independent of account.
+ *
+ * This contains data about the device and the app as a whole, independent
+ * of any particular Zulip server or account.
+ *
+ * See {@link SessionState} for discussion of what "non-persistent" means.
+ */
+export type GlobalSessionState = $ReadOnly<{
+  // `null` if we don't know. See the place where we set this, for what that
+  // means.
+  isOnline: boolean | null,
+
+  isHydrated: boolean,
+
+  orientation: Orientation,
 
   /**
    * Our actual device token, as most recently learned from the system.
@@ -56,33 +90,68 @@ export type SessionState = {|
   pushToken: string | null,
 
   debug: Debug,
-|};
+
+  ...
+}>;
+
+/**
+ * Miscellaneous non-persistent state about this run of the app.
+ *
+ * These state items are stored in `session.state`, and 'session' is
+ * in `discardKeys` in src/boot/store.js. That means these values
+ * won't be persisted between sessions; on startup, they'll all be
+ * initialized to their default values.
+ */
+export type SessionState = $ReadOnly<{|
+  ...$Exact<GlobalSessionState>,
+  ...$Exact<PerAccountSessionState>,
+|}>;
+
+// As part of letting GlobalState freely convert to PerAccountState,
+// we'll want the same for SessionState.  (This is also why
+// PerAccountSessionState is inexact.)
+(s: SessionState): PerAccountSessionState => s; // eslint-disable-line no-unused-expressions
 
 const initialState: SessionState = {
-  eventQueueId: -1,
-  isOnline: true,
+  eventQueueId: null,
+
+  // This will be `null` on startup, while we wait to hear `true` or `false`
+  // from the native module over the RN bridge; so, have it start as `null`.
+  isOnline: null,
+
   isHydrated: false,
   loading: false,
   needsInitialFetch: false,
   orientation: 'PORTRAIT',
   outboxSending: false,
   pushToken: null,
-  debug: {
-    doNotMarkMessagesAsRead: false,
-  },
+  debug: Object.freeze({}),
+  hasDismissedServerCompatNotice: false,
 };
 
 const rehydrate = (state, action) => {
   const { payload } = action;
-  const haveApiKey = !!(payload && payload.accounts && hasAuth(payload));
+
+  /* $FlowIgnore[incompatible-cast]: The actual type allows any property to
+       be null; narrow that to just the one that `getHasAuth` will care
+       about.  (What we really want here is what the value of `getHasAuth`
+       will be after the rehydrate is complete.  So even if some other
+       property is null in the payload, we still do want to ask `getHasAuth`
+       what it thinks.) */
+  const payloadForGetHasAuth = (payload: GlobalState | { accounts: null, ... } | void);
+  const haveApiKey = !!(
+    payloadForGetHasAuth
+    && payloadForGetHasAuth.accounts
+    && getHasAuth(payloadForGetHasAuth)
+  );
+
   return {
     ...state,
     isHydrated: true,
     // On rehydration, do an initial fetch if we have access to an account
     // (indicated by the presence of an api key). Otherwise, the initial fetch
     // will be initiated on loginSuccess.
-    // NB `InitialNavigationDispatcher`'s `doInitialNavigation`
-    // depends intimately on this behavior.
+    // NB `getInitialRouteInfo` depends intimately on this behavior.
     needsInitialFetch: haveApiKey,
   };
 };
@@ -137,6 +206,7 @@ export default (state: SessionState = initialState, action: Action): SessionStat
         loading: true,
       };
 
+    case INITIAL_FETCH_ABORT:
     case INITIAL_FETCH_COMPLETE:
       return {
         ...state,
@@ -166,6 +236,12 @@ export default (state: SessionState = initialState, action: Action): SessionStat
           ...state.debug,
           [action.key]: action.value,
         },
+      };
+
+    case DISMISS_SERVER_COMPAT_NOTICE:
+      return {
+        ...state,
+        hasDismissedServerCompatNotice: true,
       };
 
     default:

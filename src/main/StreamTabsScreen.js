@@ -1,12 +1,12 @@
 /* @flow strict-local */
 import React from 'react';
-import { Text } from 'react-native';
-import { FormattedMessage } from 'react-intl';
+import type { Node } from 'react';
 import {
   createMaterialTopTabNavigator,
   type MaterialTopTabNavigationProp,
 } from '@react-navigation/material-top-tabs';
 
+import { Label } from '../common';
 import { createStyleSheet } from '../styles';
 import type { RouteProp, RouteParamsOf } from '../react-navigation';
 import type { MainTabsNavigationProp } from './MainTabsScreen';
@@ -42,7 +42,7 @@ type Props = $ReadOnly<{|
   route: RouteProp<'stream-tabs', void>,
 |}>;
 
-export default function StreamTabsScreen(props: Props) {
+export default function StreamTabsScreen(props: Props): Node {
   return (
     <Tab.Navigator
       {...materialTopTabNavigatorConfig({
@@ -55,22 +55,14 @@ export default function StreamTabsScreen(props: Props) {
         name="subscribed"
         component={SubscriptionsCard}
         options={{
-          tabBarLabel: ({ color }) => (
-            <Text style={[styles.tab, { color }]}>
-              <FormattedMessage id="Subscribed" defaultMessage="Subscribed" />
-            </Text>
-          ),
+          tabBarLabel: ({ color }) => <Label style={[styles.tab, { color }]} text="Subscribed" />,
         }}
       />
       <Tab.Screen
         name="allStreams"
         component={StreamListCard}
         options={{
-          tabBarLabel: ({ color }) => (
-            <Text style={[styles.tab, { color }]}>
-              <FormattedMessage id="All streams" defaultMessage="All streams" />
-            </Text>
-          ),
+          tabBarLabel: ({ color }) => <Label style={[styles.tab, { color }]} text="All streams" />,
         }}
       />
     </Tab.Navigator>

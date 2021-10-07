@@ -2,33 +2,28 @@
 import { NativeModules, DeviceEventEmitter, Platform } from 'react-native';
 
 import * as NavigationService from '../nav/NavigationService';
-import type { Dispatch, SharedData, GetState } from '../types';
+import type { SharedData } from './types';
 import { navigateToSharing } from '../actions';
 
 const Sharing = NativeModules.Sharing ?? {
-  getInitialSharedContent: () =>
+  readInitialSharedContent: () =>
     // TODO: Implement on iOS.
     null,
 };
 
-const goToSharing = (data: SharedData) => (dispatch: Dispatch, getState: GetState) => {
+const goToSharing = (data: SharedData) => {
   NavigationService.dispatch(navigateToSharing(data));
 };
 
-export const handleInitialShare = async (dispatch: Dispatch) => {
-  const initialSharedData: SharedData | null = await Sharing.getInitialSharedContent();
+export const handleInitialShare = async () => {
+  const initialSharedData: SharedData | null = await Sharing.readInitialSharedContent();
   if (initialSharedData !== null) {
-    dispatch(goToSharing(initialSharedData));
+    goToSharing(initialSharedData);
   }
 };
 
 export class ShareReceivedListener {
-  dispatch: Dispatch;
   unsubs: Array<() => void> = [];
-
-  constructor(dispatch: Dispatch) {
-    this.dispatch = dispatch;
-  }
 
   /** Private. */
   listen(name: string, handler: (...empty) => void | Promise<void>) {
@@ -45,8 +40,8 @@ export class ShareReceivedListener {
     }
   }
 
-  handleShareReceived = (data: SharedData) => {
-    this.dispatch(goToSharing(data));
+  handleShareReceived: SharedData => void = data => {
+    goToSharing(data);
   };
 
   /** Start listening.  Don't call twice without intervening `stop`. */

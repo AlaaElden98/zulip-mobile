@@ -1,11 +1,11 @@
 /* @flow strict-local */
-import React, { PureComponent } from 'react';
+import React, { useContext } from 'react';
+import type { Node } from 'react';
 import { View } from 'react-native';
 import type { ViewStyleProp } from 'react-native/Libraries/StyleSheet/StyleSheet';
 
-import type { PresenceState, UserOrBot, UserStatusMapObject, Dispatch } from '../types';
-import { createStyleSheet } from '../styles';
-import { connect } from '../react-redux';
+import { createStyleSheet, ThemeContext } from '../styles';
+import { useSelector } from '../react-redux';
 import { statusFromPresenceAndUserStatus } from '../utils/presence';
 import { getPresence, getUserStatus } from '../selectors';
 import { getAllUsersByEmail } from '../users/userSelectors';
@@ -25,7 +25,6 @@ const styles = createStyleSheet({
     width: 15,
     height: 15,
     borderRadius: 7.5,
-    backgroundColor: 'white',
   },
   active: {
     backgroundColor: 'hsl(106, 74%, 44%)',
@@ -63,15 +62,17 @@ function MaybeOpaqueBackgroundWrapper(
   props: $ReadOnly<{|
     useOpaqueBackground: boolean,
     style?: ViewStyleProp,
-    children: React$Node,
+    children: Node,
   |}>,
 ) {
   const { useOpaqueBackground, style, children } = props;
+  const { backgroundColor } = useContext(ThemeContext);
   return (
     <View
       style={[
         styles.maybeOpaqueBackgroundWrapper,
         useOpaqueBackground ? styles.opaqueBackground : undefined,
+        useOpaqueBackground ? { backgroundColor } : undefined,
         style,
       ]}
     >
@@ -96,15 +97,7 @@ const PresenceStatusIndicatorUnavailable = () => (
   </View>
 );
 
-type PropsFromConnect = {|
-  dispatch: Dispatch,
-  presence: PresenceState,
-  allUsersByEmail: Map<string, UserOrBot>,
-  userStatus: UserStatusMapObject,
-|};
-
 type Props = $ReadOnly<{|
-  ...PropsFromConnect,
   style?: ViewStyleProp,
   email: string,
   hideIfOffline: boolean,
@@ -121,69 +114,56 @@ type Props = $ReadOnly<{|
  * @prop email - email of the user whose status we are showing.
  * @prop hideIfOffline - Do not render for 'offline' state.
  */
-class PresenceStatusIndicator extends PureComponent<Props> {
-  render() {
-    const {
-      email,
-      presence,
-      style,
-      hideIfOffline,
-      allUsersByEmail,
-      userStatus,
-      useOpaqueBackground,
-    } = this.props;
+export default function PresenceStatusIndicator(props: Props): Node {
+  const { email, style, hideIfOffline, useOpaqueBackground } = props;
+  const presence = useSelector(getPresence);
+  const allUsersByEmail = useSelector(getAllUsersByEmail);
+  const userStatus = useSelector(getUserStatus);
 
-    const userPresence = presence[email];
-    const user = allUsersByEmail.get(email);
+  const userPresence = presence[email];
+  const user = allUsersByEmail.get(email);
 
-    if (!user || !userPresence || !userPresence.aggregated) {
+  if (!user || !userPresence || !userPresence.aggregated) {
+    return null;
+  }
+
+  const status = statusFromPresenceAndUserStatus(userPresence, userStatus[user.user_id]);
+
+  if (hideIfOffline && status === 'offline') {
+    return null;
+  }
+
+  switch (status) {
+    case 'active':
+      return (
+        <MaybeOpaqueBackgroundWrapper style={style} useOpaqueBackground={useOpaqueBackground}>
+          <PresenceStatusIndicatorActive />
+        </MaybeOpaqueBackgroundWrapper>
+      );
+
+    case 'idle':
+      return (
+        <MaybeOpaqueBackgroundWrapper style={style} useOpaqueBackground={useOpaqueBackground}>
+          <PresenceStatusIndicatorIdle />
+        </MaybeOpaqueBackgroundWrapper>
+      );
+
+    case 'offline':
+      return (
+        <MaybeOpaqueBackgroundWrapper style={style} useOpaqueBackground={useOpaqueBackground}>
+          <PresenceStatusIndicatorOffline />
+        </MaybeOpaqueBackgroundWrapper>
+      );
+
+    case 'unavailable':
+      return (
+        <MaybeOpaqueBackgroundWrapper style={style} useOpaqueBackground={useOpaqueBackground}>
+          <PresenceStatusIndicatorUnavailable />
+        </MaybeOpaqueBackgroundWrapper>
+      );
+
+    default:
+      ensureUnreachable(status);
       return null;
-    }
-
-    const status = statusFromPresenceAndUserStatus(userPresence, userStatus[user.user_id]);
-
-    if (hideIfOffline && status === 'offline') {
-      return null;
-    }
-
-    switch (status) {
-      case 'active':
-        return (
-          <MaybeOpaqueBackgroundWrapper style={style} useOpaqueBackground={useOpaqueBackground}>
-            <PresenceStatusIndicatorActive />
-          </MaybeOpaqueBackgroundWrapper>
-        );
-
-      case 'idle':
-        return (
-          <MaybeOpaqueBackgroundWrapper style={style} useOpaqueBackground={useOpaqueBackground}>
-            <PresenceStatusIndicatorIdle />
-          </MaybeOpaqueBackgroundWrapper>
-        );
-
-      case 'offline':
-        return (
-          <MaybeOpaqueBackgroundWrapper style={style} useOpaqueBackground={useOpaqueBackground}>
-            <PresenceStatusIndicatorOffline />
-          </MaybeOpaqueBackgroundWrapper>
-        );
-
-      case 'unavailable':
-        return (
-          <MaybeOpaqueBackgroundWrapper style={style} useOpaqueBackground={useOpaqueBackground}>
-            <PresenceStatusIndicatorUnavailable />
-          </MaybeOpaqueBackgroundWrapper>
-        );
-
-      default:
-        ensureUnreachable(status);
-        return null;
-    }
   }
 }
-
-export default connect(state => ({
-  presence: getPresence(state),
-  allUsersByEmail: getAllUsersByEmail(state),
-  userStatus: getUserStatus(state),
-}))(PresenceStatusIndicator);

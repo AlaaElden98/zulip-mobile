@@ -21,36 +21,32 @@ class NotificationsModule extends ReactContextBaseJavaModule {
         return "Notifications";
     }
 
-    @Override
-    public void initialize() {
-        // Invoking `emitToken` here is a bit belt-and-suspenders: the FCM framework
-        // already invokes it (via `onRefreshToken`) at app startup.  But that can be
-        // before React is ready.  With some more care we could hang on to it and emit
-        // the event a bit later, but instead we just redundantly emit here when we
-        // know things have started up.
-        emitToken(getReactApplicationContext());
-    }
-
-    static void emitToken(@Nullable ReactContext reactContext) {
-        final String token = FirebaseInstanceId.getInstance().getToken();
+    static void emitToken(@Nullable ReactContext reactContext, String token) {
         if (reactContext == null) {
             // Perhaps this is possible if InstanceIDListenerService gets invoked?
-            // If so, the next time the app is launched, this method will be invoked again
-            // by our NotificationsModule#initialize, by which point there certainly is
-            // a React context; so we'll learn the new token then.
-            Log.w(TAG, "Got token before React context initialized");
             return;
         }
         Log.i(TAG, "Got token; emitting event");
         NotifyReact.emit(reactContext, "remoteNotificationsRegistered", token);
     }
 
+    /**
+     * Grab the token and return it to the JavaScript caller.
+     */
     @ReactMethod
-    public void getInitialNotification(Promise promise) {
+    public void getToken(Promise promise) {
+        FirebaseInstanceId.getInstance().getInstanceId()
+                .addOnSuccessListener(instanceId -> promise.resolve(instanceId.getToken()))
+                .addOnFailureListener(e -> promise.reject(e));
+    }
+
+    @ReactMethod
+    public void readInitialNotification(Promise promise) {
         if (null == initialNotification) {
             promise.resolve(null);
         } else {
             promise.resolve(Arguments.fromBundle(initialNotification));
+            initialNotification = null;
         }
     }
 }

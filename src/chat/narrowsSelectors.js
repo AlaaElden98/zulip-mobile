@@ -1,9 +1,10 @@
 /* @flow strict-local */
+// $FlowFixMe[untyped-import]
 import isEqual from 'lodash.isequal';
 import { createSelector } from 'reselect';
 
 import type {
-  GlobalState,
+  PerAccountState,
   Message,
   Narrow,
   Outbox,
@@ -18,6 +19,7 @@ import {
   getMute,
   getStreams,
   getOutbox,
+  getFlags,
 } from '../directSelectors';
 import { getCaughtUpForNarrow } from '../caughtup/caughtUpSelectors';
 import { getAllUsersById, getOwnUserId } from '../users/userSelectors';
@@ -27,12 +29,14 @@ import {
   caseNarrowDefault,
   keyFromNarrow,
   streamNameOfNarrow,
+  caseNarrow,
 } from '../utils/narrow';
-import { shouldBeMuted } from '../utils/message';
+import { isTopicMuted } from '../mute/muteModel';
+import { streamNameOfStreamMessage } from '../utils/recipient';
 import { NULL_ARRAY, NULL_SUBSCRIPTION } from '../nullObjects';
 import * as logging from '../utils/logging';
 
-export const outboxMessagesForNarrow: Selector<Outbox[], Narrow> = createSelector(
+export const outboxMessagesForNarrow: Selector<$ReadOnlyArray<Outbox>, Narrow> = createSelector(
   (state, narrow) => narrow,
   getCaughtUpForNarrow,
   state => getOutbox(state),
@@ -56,8 +60,10 @@ export const outboxMessagesForNarrow: Selector<Outbox[], Narrow> = createSelecto
   },
 );
 
-export const getFetchedMessageIdsForNarrow = (state: GlobalState, narrow: Narrow) =>
-  getAllNarrows(state).get(keyFromNarrow(narrow)) || NULL_ARRAY;
+export const getFetchedMessageIdsForNarrow = (
+  state: PerAccountState,
+  narrow: Narrow,
+): $ReadOnlyArray<number> => getAllNarrows(state).get(keyFromNarrow(narrow)) || NULL_ARRAY;
 
 const getFetchedMessagesForNarrow: Selector<Message[], Narrow> = createSelector(
   getFetchedMessageIdsForNarrow,
@@ -89,6 +95,28 @@ export const getMessagesForNarrow: Selector<$ReadOnlyArray<Message | Outbox>, Na
     },
   );
 
+/** Whether this stream's messages should appear in the "all messages" narrow. */
+const showStreamInHomeNarrow = (
+  streamName: string,
+  subscriptions: $ReadOnlyArray<Subscription>,
+): boolean => {
+  const sub = subscriptions.find(x => x.name === streamName);
+  if (!sub) {
+    // If there's no matching subscription, then the user must have
+    // unsubscribed from the stream since the message was received.  Leave
+    // those messages out of this view, just like for a muted stream.
+    return false;
+  }
+
+  return sub.in_home_view;
+};
+
+/**
+ * The known messages that should appear in the given narrow's message list.
+ *
+ * This is like {@link getMessagesForNarrow} but returns a subset of the
+ * messages, to implement the muted-stream and muted-topic features.
+ */
 // Prettier mishandles this Flow syntax.
 // prettier-ignore
 export const getShownMessagesForNarrow: Selector<$ReadOnlyArray<Message | Outbox>, Narrow> =
@@ -97,23 +125,75 @@ export const getShownMessagesForNarrow: Selector<$ReadOnlyArray<Message | Outbox
     getMessagesForNarrow,
     state => getSubscriptions(state),
     state => getMute(state),
-    (narrow, messagesForNarrow, subscriptions, mute) =>
-      messagesForNarrow.filter(item => !shouldBeMuted(item, narrow, subscriptions, mute)),
-  );
+    state => getFlags(state),
+    (narrow, messagesForNarrow, subscriptions, mute, flags) =>
+      caseNarrow(narrow, {
+        home: _ =>
+          messagesForNarrow.filter(message => {
+            if (message.type === 'private') {
+              return true;
+            }
+            if (flags.mentioned[message.id]) {
+              return true;
+            }
+            const streamName = streamNameOfStreamMessage(message);
+            return (
+              showStreamInHomeNarrow(streamName, subscriptions)
+              && !isTopicMuted(streamName, message.subject, mute)
+            );
+          }),
 
-export const getFirstMessageId = (state: GlobalState, narrow: Narrow): number | void => {
+        stream: _ =>
+          messagesForNarrow.filter(message => {
+            if (message.type === 'private') {
+              return true;
+            }
+            if (flags.mentioned[message.id]) {
+              return true;
+            }
+            const streamName = streamNameOfStreamMessage(message);
+            return !isTopicMuted(streamName, message.subject, mute);
+          }),
+
+        // In the starred-message view, ignore stream/topic mutes.
+        // TODO: What about starred messages in other views?
+        starred: _ => messagesForNarrow,
+
+        // When viewing a topic narrow, we show all the messages even if the
+        // topic or stream is muted.
+        topic: _ => messagesForNarrow,
+
+        // In a PM narrow, no messages can be in a muted stream or topic.
+        pm: _ => messagesForNarrow,
+
+        // In the @-mentions narrow, all messages are mentions, which we
+        // always show despite stream or topic mutes.
+        mentioned: _ => messagesForNarrow,
+
+        // The all-PMs narrow doesn't matter here, because we don't offer a
+        // message list for it in the UI.  (It exists for the sake of
+        // `getRecentConversationsLegacy`.)
+        allPrivate: _ => messagesForNarrow,
+
+        // Search narrows don't matter here, because we never reach this code
+        // when searching (we don't get the messages from Redux.)
+        search: _ => messagesForNarrow,
+      }),
+);
+
+export const getFirstMessageId = (state: PerAccountState, narrow: Narrow): number | void => {
   const ids = getFetchedMessageIdsForNarrow(state, narrow);
   return ids.length > 0 ? ids[0] : undefined;
 };
 
-export const getLastMessageId = (state: GlobalState, narrow: Narrow): number | void => {
+export const getLastMessageId = (state: PerAccountState, narrow: Narrow): number | void => {
   const ids = getFetchedMessageIdsForNarrow(state, narrow);
   return ids.length > 0 ? ids[ids.length - 1] : undefined;
 };
 
 // Prettier mishandles this Flow syntax.
 // prettier-ignore
-// TODO: clean up what this returns.
+// TODO: clean up what this returns; possibly to just `Stream`
 export const getStreamInNarrow: Selector<Subscription | {| ...Stream, in_home_view: boolean |}, Narrow> = createSelector(
   (state, narrow) => narrow,
   state => getSubscriptions(state),
