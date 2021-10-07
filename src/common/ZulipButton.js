@@ -92,6 +92,7 @@ type Props = $ReadOnly<{|
       width?: mixed,
       borderWidth?: mixed,
       borderRadius?: mixed,
+      borderColor?: mixed,
       flex?: mixed,
       alignSelf?: mixed,
       backgroundColor?: mixed,

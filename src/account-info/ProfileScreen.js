@@ -3,18 +3,16 @@ import React, { useContext } from 'react';
 import type { Node } from 'react';
 import { ScrollView, View, Alert } from 'react-native';
 
-import { TranslationContext } from '../boot/TranslationProvider';
 import type { RouteProp } from '../react-navigation';
 import type { MainTabsNavigationProp } from '../main/MainTabsScreen';
 import * as NavigationService from '../nav/NavigationService';
 import { createStyleSheet } from '../styles';
-import { useDispatch, useSelector } from '../react-redux';
+import { useSelector } from '../react-redux';
 import { ZulipButton } from '../common';
 import {
-  logout,
-  tryStopNotifications,
   navigateToAccountPicker,
   navigateToUserStatus,
+  navigateToAccountSetting,
 } from '../actions';
 import AccountDetails from './AccountDetails';
 import AwayStatusSwitch from './AwayStatusSwitch';
@@ -29,6 +27,17 @@ const styles = createStyleSheet({
   button: {
     flex: 1,
     margin: 8,
+  },
+  deactivateText: {
+    color: 'hsl(356.7,63.9%,71.8%)',
+  },
+  deactivateButton: {
+    flex: 1,
+    margin: 8,
+    borderColor: 'hsl(3.5,54.8%,81.8%)',
+  },
+  switchText: {
+    fontSize: 15,
   },
 });
 
@@ -45,14 +54,14 @@ function SetStatusButton(props: {||}) {
   );
 }
 
-function SwitchAccountButton(props: {||}) {
+function AccountSettingButton(props: {||}) {
   return (
     <ZulipButton
       style={styles.button}
       secondary
-      text="Switch account"
+      text="Account Setting"
       onPress={() => {
-        NavigationService.dispatch(navigateToAccountPicker());
+        NavigationService.dispatch(navigateToAccountSetting());
       }}
     />
   );
@@ -66,7 +75,8 @@ function LogoutButton(props: {||}) {
     <ZulipButton
       style={styles.button}
       secondary
-      text="Log out"
+      text="Switch account"
+      textStyle={styles.switchText}
       onPress={() => {
         Alert.alert(
           _('Log out?'),
@@ -115,7 +125,9 @@ export default function ProfileScreen(props: Props): Node {
       </View>
       <View style={styles.buttonRow}>
         <SwitchAccountButton />
-        <LogoutButton />
+      </View>
+      <View style={styles.buttonRow}>
+        <AccountSettingButton />
       </View>
     </ScrollView>
   );
